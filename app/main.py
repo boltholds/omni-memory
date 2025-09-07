@@ -14,6 +14,8 @@ from infra.episodic_repo import EpisodicRepo
 from infra.consistency import SimpleConsistencyEngine
 from infra.metrics import metrics, timeit_request
 
+from app.config import settings
+from app.admin import router as admin_router, attach_repos
 from app.retriever import Retriever
 from app.orchestrator import Orchestrator
 from app.writeback import WriteBackService
@@ -27,7 +29,7 @@ class RetrieveIn(BaseModel):
 def create_app() -> FastAPI:
     app = FastAPI(title="omni-memory", version="0.1.0")
 
-    # CORS на будущее (например, для веб-клиента)
+    # TODO: CORS for future server
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -50,7 +52,10 @@ def create_app() -> FastAPI:
 
     vrepo = VectorStoreRepo()
     grepo = GraphRepo()
-    erepo = EpisodicRepo()
+    erepo = EpisodicRepo(db_path=settings.sqlite_path)
+    attach_repos(vrepo, grepo, erepo)
+    app.include_router(admin_router)
+    
     retriever = Retriever(vrepo, grepo, erepo)
     consistency = SimpleConsistencyEngine()
     orchestrator = Orchestrator(retriever, SimpleConsistencyEngine())

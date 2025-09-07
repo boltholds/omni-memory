@@ -21,6 +21,7 @@ httpx = "^0.28.1"
 numpy = "^2.3.2"
 networkx = "^3.5"
 typer = { version = "^0.17.4", extras = ["all"] }
+pydantic-settings = "^2.10.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.4.2"
