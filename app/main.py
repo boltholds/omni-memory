@@ -2,6 +2,16 @@ from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from domain.models import RetrievalBundle, WriteReport, ConflictReport, ContextPack, MemoryObject, Fact
+from infra.vector_repo import VectorStoreRepo
+from infra.graph_repo import GraphRepo
+from infra.episodic_repo import EpisodicRepo
+from app.retriever import Retriever
+from pydantic import BaseModel
+
+class RetrieveIn(BaseModel):
+    q: str
+    k_sem: int = 5
+    k_eps: int = 3
 
 def create_app() -> FastAPI:
     app = FastAPI(title="omni-memory", version="0.1.0")
@@ -17,12 +27,18 @@ def create_app() -> FastAPI:
 
     @app.get("/healthz")
     def healthz():
-        return {"status": "ok"}
+        return {"status": "ok","version":"is_mock"}
+
+
+    vrepo = VectorStoreRepo()
+    grepo = GraphRepo()
+    erepo = EpisodicRepo()
+    retriever = Retriever(vrepo, grepo, erepo)
+
 
     @app.post("/retrieve", response_model=RetrievalBundle)
-    def retrieve(query: dict):
-        # query = {"q": "..."}
-        return RetrievalBundle()
+    def retrieve(inp: RetrieveIn):
+        return retriever.retrieve(inp.q, inp.k_sem, inp.k_eps)
 
     @app.post("/writeback", response_model=WriteReport)
     def writeback(objs: list[MemoryObject]):
