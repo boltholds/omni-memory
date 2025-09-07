@@ -1,12 +1,16 @@
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
 from domain.models import RetrievalBundle, WriteReport, ConflictReport, ContextPack, MemoryObject, Fact
 from infra.vector_repo import VectorStoreRepo
 from infra.graph_repo import GraphRepo
 from infra.episodic_repo import EpisodicRepo
+from infra.consistency import SimpleConsistencyEngine
 from app.retriever import Retriever
-from pydantic import BaseModel
+from app.orchestrator import Orchestrator
+
 
 class RetrieveIn(BaseModel):
     q: str
@@ -34,7 +38,7 @@ def create_app() -> FastAPI:
     grepo = GraphRepo()
     erepo = EpisodicRepo()
     retriever = Retriever(vrepo, grepo, erepo)
-
+    orchestrator = Orchestrator(retriever, SimpleConsistencyEngine())
 
     @app.post("/retrieve", response_model=RetrievalBundle)
     def retrieve(inp: RetrieveIn):
@@ -49,8 +53,9 @@ def create_app() -> FastAPI:
         return ConflictReport(conflicts=[])
 
     @app.post("/context", response_model=ContextPack)
-    def context():
-        return ContextPack(sections=[], advisories=[])
+    def context(inp: dict):
+        bundle = orchestrator.plan_retrieval(inp.get("q", ""))
+        return orchestrator.assemble_context(bundle)
     
     
     @app.get("/")
