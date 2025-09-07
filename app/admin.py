@@ -5,6 +5,12 @@ from infra.episodic_repo import EpisodicRepo
 from app.export_import import export_memory, import_memory
 from typing import Any, Dict
 from app.writeback import WriteBackService
+from pydantic import BaseModel
+
+class VectorPathIn(BaseModel):
+    dir: str
+
+
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -41,3 +47,16 @@ def import_all(archive: Dict[str, Any]):
         return {"saved": 0, "rejected": 0, "reasons": ["writeback_not_attached"]}
     rep = import_memory(wb, archive)
     return rep
+
+
+@router.post("/vector/save")
+def vector_save(inp: VectorPathIn):
+    st = router.state  # type: ignore[attr-defined]
+    st["vrepo"].save(inp.dir)
+    return {"status": "ok", "dir": inp.dir}
+
+@router.post("/vector/load")
+def vector_load(inp: VectorPathIn):
+    st = router.state  # type: ignore[attr-defined]
+    st["vrepo"].load(inp.dir)
+    return {"status": "ok", "dir": inp.dir}

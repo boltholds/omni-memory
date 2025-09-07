@@ -35,7 +35,6 @@ def obj_kind(obj: Dict[str, Any]) -> str:
         return "episode"
     return "note"
 
-
 class WriteBackService:
     """
     Фильтрация и запись новых объектов памяти.

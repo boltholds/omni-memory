@@ -23,11 +23,11 @@ def _svc() -> WriteBackService:
         policy=MemoryPolicy(),
     )
 
-# app/cli.py (замена команд)
+_url = "http://127.0.0.1:8000"
 
 @app.command("load-facts")
 def load_facts(path: Path = typer.Argument(..., exists=True, readable=True),
-               url: str = typer.Option("http://127.0.0.1:8000")):
+               url: str = typer.Option(_url)):
     items: List[Dict[str, Any]] = json.loads(path.read_text(encoding="utf-8"))
     payload = {"facts": items}
     with httpx.Client(timeout=30.0) as client:
@@ -38,7 +38,7 @@ def load_facts(path: Path = typer.Argument(..., exists=True, readable=True),
 
 @app.command("load-notes")
 def load_notes(path: Path = typer.Argument(..., exists=True, readable=True),
-               url: str = typer.Option("http://127.0.0.1:8000")):
+               url: str = typer.Option(_url)):
     text = path.read_text(encoding="utf-8")
     lines = [ln.strip() for ln in text.splitlines()]
     items: List[Dict[str, Any]] = []
@@ -70,7 +70,7 @@ def load_notes(path: Path = typer.Argument(..., exists=True, readable=True),
 
 @app.command("load-episodes")
 def load_episodes(path: Path = typer.Argument(..., exists=True, readable=True),
-                  url: str = typer.Option("http://127.0.0.1:8000")):
+                  url: str = typer.Option(_url)):
     items: List[Dict[str, Any]] = json.loads(path.read_text(encoding="utf-8"))
     payload = {"episodes": items}
     with httpx.Client(timeout=30.0) as client:
@@ -83,7 +83,7 @@ def load_episodes(path: Path = typer.Argument(..., exists=True, readable=True),
 @app.command("export")
 def export_cmd(
     out: Path = typer.Argument(..., writable=True),
-    url: str = typer.Option("http://127.0.0.1:8000", help="Base URL of running service")
+    url: str = typer.Option(_url, help="Base URL of running service")
 ):
     """Экспорт памяти из запущенного сервера /admin/export в JSON файл."""
     with httpx.Client(timeout=30.0) as client:
@@ -96,7 +96,7 @@ def export_cmd(
 @app.command("import")
 def import_cmd(
     inp: Path = typer.Argument(..., exists=True, readable=True),
-    url: str = typer.Option("http://127.0.0.1:8000", help="Base URL of running service")
+    url: str = typer.Option(_url, help="Base URL of running service")
 ):
     """Импорт памяти в запущенный сервер через /admin/import."""
     archive = json.loads(inp.read_text(encoding="utf-8"))
@@ -110,6 +110,19 @@ def import_cmd(
         for reason in rep["reasons"]:
             typer.echo(f"  - {reason}")
 
+@app.command("vector-save")
+def vector_save_cmd(dir: Path = typer.Argument(...), url: str = typer.Option(_url)):
+    with httpx.Client(timeout=30.0) as client:
+        r = client.post(f"{url}/admin/vector/save", json={"dir": str(dir)})
+        r.raise_for_status()
+        typer.echo(f"vector saved -> {dir}")
+
+@app.command("vector-load")
+def vector_load_cmd(dir: Path = typer.Argument(...), url: str = typer.Option(_url)):
+    with httpx.Client(timeout=30.0) as client:
+        r = client.post(f"{url}/admin/vector/load", json={"dir": str(dir)})
+        r.raise_for_status()
+        typer.echo(f"vector loaded <- {dir}")
 
 
 if __name__ == "__main__":

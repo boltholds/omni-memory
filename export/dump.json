@@ -1,5 +1,19 @@
 {
-  "notes": [],
+  "notes": [
+    {
+      "id": "n1",
+      "type": "note",
+      "payload": {
+        "text": "Alice was seen near the lighthouse"
+      },
+      "provenance": {
+        "source": "user",
+        "time": null,
+        "meta": {}
+      },
+      "meta": {}
+    }
+  ],
   "facts": [
     {
       "id": "f1",

@@ -3,8 +3,10 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 import numpy as np
-
+import json
+from pathlib import Path
 import faiss  # type: ignore
+
 
 from domain.models import MemoryObject
 from domain.ports import IMemoryReadRepository, IMemoryWriteRepository
@@ -59,3 +61,55 @@ class VectorStoreRepo(IMemoryReadRepository, IMemoryWriteRepository):
             if obj:
                 out.append(obj)
         return out
+
+
+    def save(self, dir_path: str) -> None:
+        """
+        Сохранить индекс и метаданные в папку:
+            - index.faiss  — бинарник индекса
+            - ids.json     — список obj_id в порядке FAISS
+            - store.json   — объекты MemoryObject (model_dump)
+            - meta.json    — {'dim': ..., 'count': ...}
+        """
+        p = Path(dir_path)
+        p.mkdir(parents=True, exist_ok=True)
+
+        # 1) индекс
+        faiss.write_index(self._index, str(p / "index.faiss"))
+        # 2) ids
+        (p / "ids.json").write_text(json.dumps(self._ids, ensure_ascii=False, indent=2), encoding="utf-8")
+        # 3) store
+        store_dump = {k: v.model_dump() for k, v in self._store.items()}
+        (p / "store.json").write_text(json.dumps(store_dump, ensure_ascii=False), encoding="utf-8")
+        # 4) meta
+        meta = {"dim": self._dim, "count": len(self._ids)}
+        (p / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def load(self, dir_path: str) -> None:
+        """
+        Загрузить индекс и метаданные из папки. Требует совместимого embedder.dim.
+        """
+        from domain.models import MemoryObject  # локальный импорт, чтобы избежать циклов
+        p = Path(dir_path)
+        idx_path = p / "index.faiss"
+        ids_path = p / "ids.json"
+        store_path = p / "store.json"
+        meta_path = p / "meta.json"
+
+        if not (idx_path.exists() and ids_path.exists() and store_path.exists() and meta_path.exists()):
+            raise FileNotFoundError(f"Vector snapshot incomplete in {p}")
+
+        # meta для проверки
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        dim = int(meta.get("dim", 0))
+        if dim and dim != self._dim:
+            raise RuntimeError(f"Embedder dim mismatch: file={dim}, repo={self._dim}")
+
+        # 1) индекс
+        self._index = faiss.read_index(str(idx_path))
+        # 2) ids
+        self._ids = json.loads(ids_path.read_text(encoding="utf-8"))
+        # 3) store
+        raw_store = json.loads(store_path.read_text(encoding="utf-8")) or {}
+        self._store = {k: MemoryObject.model_validate(v) for k, v in raw_store.items()}
+        # capacity оставляем прежним
