@@ -53,13 +53,15 @@ def create_app() -> FastAPI:
     vrepo = VectorStoreRepo()
     grepo = GraphRepo()
     erepo = EpisodicRepo(db_path=settings.sqlite_path)
-    attach_repos(vrepo, grepo, erepo)
-    app.include_router(admin_router)
+
     
     retriever = Retriever(vrepo, grepo, erepo)
     consistency = SimpleConsistencyEngine()
     orchestrator = Orchestrator(retriever, SimpleConsistencyEngine())
     writeback_svc = WriteBackService(vrepo, grepo, erepo, MemoryPolicy())
+    
+    attach_repos(vrepo, grepo, erepo, writeback_svc)
+    app.include_router(admin_router)
 
     @app.post("/retrieve", response_model=RetrievalBundle)
     def retrieve(inp: RetrieveIn):

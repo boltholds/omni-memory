@@ -1,0 +1,53 @@
+{
+  "notes": [],
+  "facts": [
+    {
+      "id": "f1",
+      "subject": "alice",
+      "predicate": "at",
+      "object": "lighthouse",
+      "provenance": {
+        "source": "user",
+        "time": null,
+        "meta": {}
+      },
+      "meta": {}
+    },
+    {
+      "id": "f2",
+      "subject": "alice",
+      "predicate": "at",
+      "object": "bridge",
+      "provenance": {
+        "source": "user",
+        "time": null,
+        "meta": {}
+      },
+      "meta": {}
+    }
+  ],
+  "episodes": [
+    {
+      "id": "ep1",
+      "participants": [
+        "Alice",
+        "Nikolai"
+      ],
+      "summary": "Evening near the lighthouse",
+      "events": [
+        {
+          "t": 1.0,
+          "event_type": "seen",
+          "summary": "Alice met fisherman Nikolai",
+          "refs": {}
+        }
+      ],
+      "provenance": {
+        "source": "user",
+        "time": null,
+        "meta": {}
+      },
+      "meta": {}
+    }
+  ]
+}

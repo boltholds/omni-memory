@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import List, Dict, Any
-
+import httpx
 import typer
 
 from infra.vector_repo import VectorStoreRepo
@@ -23,81 +23,94 @@ def _svc() -> WriteBackService:
         policy=MemoryPolicy(),
     )
 
+# app/cli.py (замена команд)
+
 @app.command("load-facts")
-def load_facts(path: Path = typer.Argument(..., exists=True, readable=True)):
-    """
-    Загрузить факты из JSON.
-    Формат: [{"id":"f1","subject":"alice","predicate":"at","object":"lighthouse", "meta":{...}}, ...]
-    """
-    items: List[Dict[str, Any]] = json.loads(Path(path).read_text(encoding="utf-8"))
-    rep = _svc().write(items)
-    typer.echo(f"facts: saved={rep.saved}, rejected={rep.rejected}")
-    if rep.reasons:
-        typer.echo("reasons:")
-        for r in rep.reasons:
-            typer.echo(f"  - {r}")
+def load_facts(path: Path = typer.Argument(..., exists=True, readable=True),
+               url: str = typer.Option("http://127.0.0.1:8000")):
+    items: List[Dict[str, Any]] = json.loads(path.read_text(encoding="utf-8"))
+    payload = {"facts": items}
+    with httpx.Client(timeout=30.0) as client:
+        r = client.post(f"{url}/admin/import", json=payload)
+        r.raise_for_status()
+        rep = r.json()
+    typer.echo(f"facts: saved={rep.get('saved')} rejected={rep.get('rejected')}")
 
 @app.command("load-notes")
-def load_notes(path: Path = typer.Argument(..., exists=True, readable=True)):
-    """
-    Загрузить заметки из Markdown.
-    Каждый заголовок/абзац → отдельная заметка (id генерим по номеру строки).
-    PII-фильтры сработают автоматически.
-    """
-    text = Path(path).read_text(encoding="utf-8")
+def load_notes(path: Path = typer.Argument(..., exists=True, readable=True),
+               url: str = typer.Option("http://127.0.0.1:8000")):
+    text = path.read_text(encoding="utf-8")
     lines = [ln.strip() for ln in text.splitlines()]
     items: List[Dict[str, Any]] = []
     note_id = 0
     buf: List[str] = []
-
     def flush():
         nonlocal note_id, buf, items
-        if not buf:
-            return
+        if not buf: return
         note_id += 1
         items.append({"id": f"n{note_id}", "type": "note", "text": " ".join(buf)})
         buf = []
-
     for ln in lines:
         if not ln:
             flush()
             continue
-        if ln.startswith("#"):  # заголовок = новая заметка
+        if ln.startswith("#"):
             flush()
             note_id += 1
             items.append({"id": f"n{note_id}", "type": "note", "text": ln.lstrip("# ").strip()})
         else:
             buf.append(ln)
     flush()
-
-    rep = _svc().write(items)
-    typer.echo(f"notes: saved={rep.saved}, rejected={rep.rejected}")
-    if rep.reasons:
-        typer.echo("reasons:")
-        for r in rep.reasons:
-            typer.echo(f"  - {r}")
+    payload = {"notes": items}
+    with httpx.Client(timeout=30.0) as client:
+        r = client.post(f"{url}/admin/import", json=payload)
+        r.raise_for_status()
+        rep = r.json()
+    typer.echo(f"notes: saved={rep.get('saved')} rejected={rep.get('rejected')}")
 
 @app.command("load-episodes")
-def load_episodes(path: Path = typer.Argument(..., exists=True, readable=True)):
-    """
-    Загрузить эпизоды из JSON.
-    Формат:
-    [
-      {
-        "id":"ep1",
-        "participants":["Alice","Nikolai"],
-        "summary":"Evening near the lighthouse",
-        "events":[{"t":1.0,"event_type":"seen","summary":"Alice met Nikolai","refs":{}}]
-      }
-    ]
-    """
-    items: List[Dict[str, Any]] = json.loads(Path(path).read_text(encoding="utf-8"))
-    rep = _svc().write(items)
-    typer.echo(f"episodes: saved={rep.saved}, rejected={rep.rejected}")
-    if rep.reasons:
+def load_episodes(path: Path = typer.Argument(..., exists=True, readable=True),
+                  url: str = typer.Option("http://127.0.0.1:8000")):
+    items: List[Dict[str, Any]] = json.loads(path.read_text(encoding="utf-8"))
+    payload = {"episodes": items}
+    with httpx.Client(timeout=30.0) as client:
+        r = client.post(f"{url}/admin/import", json=payload)
+        r.raise_for_status()
+        rep = r.json()
+    typer.echo(f"episodes: saved={rep.get('saved')} rejected={rep.get('rejected')}")
+
+
+@app.command("export")
+def export_cmd(
+    out: Path = typer.Argument(..., writable=True),
+    url: str = typer.Option("http://127.0.0.1:8000", help="Base URL of running service")
+):
+    """Экспорт памяти из запущенного сервера /admin/export в JSON файл."""
+    with httpx.Client(timeout=30.0) as client:
+        r = client.get(f"{url}/admin/export")
+        r.raise_for_status()
+        data = r.json()
+    out.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    typer.echo(f"exported -> {out}")
+
+@app.command("import")
+def import_cmd(
+    inp: Path = typer.Argument(..., exists=True, readable=True),
+    url: str = typer.Option("http://127.0.0.1:8000", help="Base URL of running service")
+):
+    """Импорт памяти в запущенный сервер через /admin/import."""
+    archive = json.loads(inp.read_text(encoding="utf-8"))
+    with httpx.Client(timeout=60.0) as client:
+        r = client.post(f"{url}/admin/import", json=archive)
+        r.raise_for_status()
+        rep = r.json()
+    typer.echo(f"import: saved={rep.get('saved')} rejected={rep.get('rejected')}")
+    if rep.get("reasons"):
         typer.echo("reasons:")
-        for r in rep.reasons:
-            typer.echo(f"  - {r}")
+        for reason in rep["reasons"]:
+            typer.echo(f"  - {reason}")
+
+
 
 if __name__ == "__main__":
     app()
