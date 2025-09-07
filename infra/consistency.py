@@ -54,13 +54,21 @@ def score_trust_recent_first(facts: Iterable[Fact]) -> Dict[str, float]:
     items = list(facts)
     if not items:
         return {}
+
     times = [f.provenance.time or 0.0 for f in items]
     t_min, t_max = min(times), max(times)
-    t_span = max(t_max - t_min, 1e-9)
+    t_span = t_max - t_min
 
     scores: Dict[str, float] = {}
+    # Если все времена одинаковые (в т.ч. ровно один факт) — считаем их максимально «свежими»
+    uniform_time = t_span <= 1e-9
+
     for f in items:
-        t_norm = ((f.provenance.time or 0.0) - t_min) / t_span  # 0..1
+        if uniform_time:
+            t_norm = 1.0
+        else:
+            t_norm = ((f.provenance.time or 0.0) - t_min) / t_span  # 0..1
+
         s_norm = source_weight.get((f.provenance.source or "").lower(), 0.5)
         scores[f.id] = 0.5 * t_norm + 0.5 * s_norm
     return scores

@@ -4,12 +4,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from domain.models import RetrievalBundle, WriteReport, ConflictReport, ContextPack, MemoryObject, Fact
+from domain.policy import MemoryPolicy
 from infra.vector_repo import VectorStoreRepo
 from infra.graph_repo import GraphRepo
 from infra.episodic_repo import EpisodicRepo
 from infra.consistency import SimpleConsistencyEngine
 from app.retriever import Retriever
 from app.orchestrator import Orchestrator
+from app.writeback import WriteBackService
 
 
 class RetrieveIn(BaseModel):
@@ -39,14 +41,15 @@ def create_app() -> FastAPI:
     erepo = EpisodicRepo()
     retriever = Retriever(vrepo, grepo, erepo)
     orchestrator = Orchestrator(retriever, SimpleConsistencyEngine())
+    writeback_svc = WriteBackService(vrepo, grepo, erepo, MemoryPolicy())
 
     @app.post("/retrieve", response_model=RetrievalBundle)
     def retrieve(inp: RetrieveIn):
         return retriever.retrieve(inp.q, inp.k_sem, inp.k_eps)
 
     @app.post("/writeback", response_model=WriteReport)
-    def writeback(objs: list[MemoryObject]):
-        return WriteReport(saved=len(objs), rejected=0, reasons=[])
+    def writeback(objs: list[dict]):
+        return writeback_svc.write(objs)
 
     @app.post("/conflicts", response_model=ConflictReport)
     def conflicts(facts: list[Fact]):
