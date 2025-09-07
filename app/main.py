@@ -19,6 +19,7 @@ from app.admin import router as admin_router, attach_repos
 from app.retriever import Retriever
 from app.orchestrator import Orchestrator
 from app.writeback import WriteBackService
+from app.embeddings import build_embedder
 
 
 class RetrieveIn(BaseModel):
@@ -50,7 +51,8 @@ def create_app() -> FastAPI:
         return {"status": "ok", "stats": metrics.snapshot()}
 
 
-    vrepo = VectorStoreRepo()
+    embedder = build_embedder(settings.embedding_backend, settings.embedding_model)
+    vrepo = VectorStoreRepo(embedder=embedder)
     grepo = GraphRepo()
     erepo = EpisodicRepo(db_path=settings.sqlite_path)
 

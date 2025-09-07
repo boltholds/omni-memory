@@ -6,7 +6,8 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
     log_level: str = "info"
-
+    embedding_backend: str = "auto"   # auto|st|hash
+    embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     # episodic storage
     sqlite_path: str = ":memory:"    # "data/omni.db" в prod
 
