@@ -1,0 +1,4 @@
+[
+  {"id":"f1","subject":"alice","predicate":"at","object":"lighthouse"},
+  {"id":"f2","subject":"alice","predicate":"at","object":"bridge"}
+]

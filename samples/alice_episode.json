@@ -1,0 +1,8 @@
+[
+  {
+    "id":"ep1",
+    "participants":["Alice","Nikolai"],
+    "summary":"Evening near the lighthouse",
+    "events":[{"t":1.0,"event_type":"seen","summary":"Alice met fisherman Nikolai","refs":{}}]
+  }
+]
