@@ -5,8 +5,8 @@ from typing import List, Set
 
 from domain.models import RetrievalBundle, MemoryObject, Fact, Episode
 from domain.ports import IRetriever, IMemoryReadRepository, IGraphRepository, IEpisodicRepository
-
-
+from app.entities import build_entity_stack
+from app.config import settings
 
 
 def _simple_entities(query: str) -> List[str]:
@@ -42,32 +42,29 @@ class Retriever(IRetriever):
         self._vector = vector_repo
         self._graph = graph_repo
         self._episodic = episodic_repo
+        self._extractor, self._linker = build_entity_stack(settings.ner_backend, settings.entity_aliases)
+
 
     def retrieve(self, query: str, k_sem: int = 5, k_eps: int = 3) -> RetrievalBundle:
         ents = _simple_entities(query)
 
         # I Семантические чанки
-        semantic_chunks: List[MemoryObject] = self._vector.semantic_search(query, k=k_sem)
+        semantic_chunks = self._vector.semantic_search(query, k=k_sem)
 
         # II Факты (по subject и по object для каждой выделенной сущности)
         facts: List[Fact] = []
         seen_ids: Set[str] = set()
         for e in ents:
+            # query по subject
             for f in self._graph.query(subject=e):
                 if f.id not in seen_ids:
-                    seen_ids.add(f.id)
-                    facts.append(f)
+                    seen_ids.add(f.id); facts.append(f)
+            # query по object
             for f in self._graph.query(object=e):
                 if f.id not in seen_ids:
-                    seen_ids.add(f.id)
-                    facts.append(f)
+                    seen_ids.add(f.id); facts.append(f)
 
         # III Эпизоды (пользователя пока не извлекаем -> None)
         episodes: List[Episode] = self._episodic.search(user=None, entities=ents, k=k_eps)
 
-        return RetrievalBundle(
-            semantic_chunks=semantic_chunks,
-            facts=facts,
-            episodes=episodes,
-            citations=[],
-        )
+        return RetrievalBundle(semantic_chunks=semantic_chunks, facts=facts, episodes=episodes, citations=[])

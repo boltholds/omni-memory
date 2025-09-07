@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings
+from typing import Dict, List
 
 class Settings(BaseSettings):
     app_name: str = "omni-memory"
@@ -10,7 +11,15 @@ class Settings(BaseSettings):
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     # episodic storage
     sqlite_path: str = ":memory:"    # "data/omni.db" в prod
-
+    ner_backend: str = "regex"  # regex|spacy|auto
+    entity_aliases: Dict[str, List[str]] = {
+        "alice": ["alisa", "алиса"],
+        "lighthouse": ["beacon", "phare", "маяк"],
+        "bridge": ["pont", "puente", "мост"],
+        "nikolai": ["nicholas", "николай"],
+    }
+    
+    
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

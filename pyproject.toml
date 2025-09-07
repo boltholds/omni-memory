@@ -18,11 +18,12 @@ fastapi = "^0.116.1"
 uvicorn = "^0.35.0"
 pydantic = "^2.11.7"
 httpx = "^0.28.1"
-numpy = "^2.3.2"
+numpy = "<2.0"
 networkx = "^3.5"
 typer = { version = "^0.17.4", extras = ["all"] }
 pydantic-settings = "^2.10.1"
 sentence-transformers = ">=2.7.0,<3.0.0"
+spacy = "<3.8"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.4.2"
