@@ -21,6 +21,10 @@ from app.orchestrator import Orchestrator
 from app.writeback import WriteBackService
 from app.embeddings import build_embedder
 
+class ContextIn(BaseModel):
+    q: str = ""
+    max_tokens: Optional[int] = None
+
 
 class RetrieveIn(BaseModel):
     q: str
@@ -92,9 +96,18 @@ def create_app() -> FastAPI:
 
 
     @app.post("/context", response_model=ContextPack)
-    def context(inp: Optional[dict] = None):
-        q = "" if inp is None else str(inp.get("q", ""))
+    def context(inp: Optional[ContextIn] = None):
+        q = "" if inp is None else inp.q
         bundle = orchestrator.plan_retrieval(q)
+        # временно «подменим» бюджет из запроса
+        if inp and inp.max_tokens:
+            from app.config import settings as _settings
+            old = _settings.context_max_tokens
+            try:
+                _settings.context_max_tokens = int(inp.max_tokens)
+                return orchestrator.assemble_context(bundle)
+            finally:
+                _settings.context_max_tokens = old
         return orchestrator.assemble_context(bundle)
     
     
