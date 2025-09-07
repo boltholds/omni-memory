@@ -1,3 +1,5 @@
+from typing import Optional,List, Dict, Any
+
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -50,6 +52,7 @@ def create_app() -> FastAPI:
     grepo = GraphRepo()
     erepo = EpisodicRepo()
     retriever = Retriever(vrepo, grepo, erepo)
+    consistency = SimpleConsistencyEngine()
     orchestrator = Orchestrator(retriever, SimpleConsistencyEngine())
     writeback_svc = WriteBackService(vrepo, grepo, erepo, MemoryPolicy())
 
@@ -67,12 +70,22 @@ def create_app() -> FastAPI:
         return rep
 
     @app.post("/conflicts", response_model=ConflictReport)
-    def conflicts(facts: list[Fact]):
-        return ConflictReport(conflicts=[])
+    def conflicts(items: List[Dict[str, Any]]):
+        facts: List[Fact] = []
+        for it in items:
+            if all(k in it for k in ("subject", "predicate", "object")):
+                try:
+                    facts.append(Fact.model_validate(it))
+                except Exception:
+                    pass  # пропускаем сломанные
+        return consistency.detect_conflicts(facts)
+
+
 
     @app.post("/context", response_model=ContextPack)
-    def context(inp: dict):
-        bundle = orchestrator.plan_retrieval(inp.get("q", ""))
+    def context(inp: Optional[dict] = None):
+        q = "" if inp is None else str(inp.get("q", ""))
+        bundle = orchestrator.plan_retrieval(q)
         return orchestrator.assemble_context(bundle)
     
     
