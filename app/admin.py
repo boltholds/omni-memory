@@ -1,16 +1,19 @@
 from fastapi import APIRouter
 from infra.vector_repo import VectorStoreRepo
 from infra.graph_repo import GraphRepo
-from infra.episodic_repo import EpisodicRepo
+from infra.episodic_repo import EpisodicRepo,_jload
 from app.export_import import export_memory, import_memory
 from typing import Any, Dict
 from app.writeback import WriteBackService
 from pydantic import BaseModel
+import time
 
 class VectorPathIn(BaseModel):
     dir: str
 
-
+class GCRequest(BaseModel):
+    dry_run: bool = False
+    now: float | None = None
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -60,3 +63,32 @@ def vector_load(inp: VectorPathIn):
     st = router.state  # type: ignore[attr-defined]
     st["vrepo"].load(inp.dir)
     return {"status": "ok", "dir": inp.dir}
+
+
+@router.post("/gc")
+def gc(inp: GCRequest):
+    st = router.state  # type: ignore[attr-defined]
+    now = time.time() if inp.now is None else float(inp.now)
+
+    # dry-run: просто посчитаем
+    if inp.dry_run:
+        # «подсчёт» на глаз из внутренностей (минимально — прогоним логику без удаления)
+        v_dead = sum(1 for obj in st["vrepo"]._store.values() if (obj.meta or {}).get("expire_at", now+1) < now)  # type: ignore[attr-defined]
+        g_dead = 0
+        for s,o,k,data in st["grepo"]._g.edges(keys=True, data=True):  # type: ignore[attr-defined]
+            exp = (data.get("meta") or {}).get("expire_at")
+            if exp is not None and float(exp) < now:
+                g_dead += 1
+        e_dead = 0
+        for r in st["erepo"]._conn.execute("SELECT meta FROM episodes"):  # type: ignore[attr-defined]
+            meta = _jload(r[0]) or {}
+            exp = meta.get("expire_at")
+            if exp is not None and float(exp) < now:
+                e_dead += 1
+        return {"dry_run": True, "vector": v_dead, "graph": g_dead, "episodes": e_dead}
+
+    # реальный GC
+    v = st["vrepo"].gc_expired(now)
+    g = st["grepo"].gc_expired(now)
+    e = st["erepo"].gc_expired(now)
+    return {"removed": {"vector": v, "graph": g, "episodes": e}}

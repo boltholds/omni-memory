@@ -2,7 +2,7 @@
 from __future__ import annotations
 from typing import List
 
-from domain.models import RetrievalBundle, ContextPack, ContextSection, ConflictReport
+from domain.models import RetrievalBundle, ContextPack, ContextSection
 from domain.ports import IMemoryOrchestrator, IRetriever, IConsistencyEngine
 from infra.metrics import metrics
 from app.context_builder import build_context

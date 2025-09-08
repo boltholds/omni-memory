@@ -1,6 +1,7 @@
 from __future__ import annotations
 import re
 from typing import Any, Dict, List, Tuple, Union
+import hashlib, re
 
 from domain.models import (
     MemoryObject,
@@ -16,6 +17,10 @@ from infra.consistency import score_trust_recent_first
 
 EmailRe = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 ApiKeyLikeRe = re.compile(r"(api[_-]?key|secret|token)\s*[:=]\s*[A-Za-z0-9_\-]{12,}", re.I)
+_norm_ws_re = re.compile(r"\s+")
+def _sig(text: str) -> str:
+    t = _norm_ws_re.sub(" ", text.strip().lower())[:4096]
+    return hashlib.sha1(t.encode("utf-8")).hexdigest()
 
 
 def contains_pii(text: str) -> bool:
@@ -34,6 +39,13 @@ def obj_kind(obj: Dict[str, Any]) -> str:
     if "participants" in obj or "events" in obj:
         return "episode"
     return "note"
+
+
+def _apply_ttl_to_meta(meta: dict, policy: MemoryPolicy) -> dict:
+    meta = dict(meta or {})
+    if "expire_at" not in meta:
+        meta["expire_at"] = policy.apply_ttl({"meta": meta})
+    return meta
 
 class WriteBackService:
     """
@@ -60,9 +72,11 @@ class WriteBackService:
         if kind == "fact":
             # гарантируем наличие provenance
             raw.setdefault("provenance", Provenance().model_dump())
+            raw["meta"] = _apply_ttl_to_meta(raw.get("meta") or {}, self._policy)
             return "fact", Fact.model_validate(raw)
         if kind == "episode":
             raw.setdefault("provenance", Provenance().model_dump())
+            raw["meta"] = _apply_ttl_to_meta(raw.get("meta") or {}, self._policy)
             return "episode", Episode.model_validate(raw)
         # note / generic memory object
         # нормализуем в MemoryObject(id, type="note", payload={"text": ...})
@@ -76,7 +90,7 @@ class WriteBackService:
             "type": raw.get("type") or "note",
             "payload": payload or {"raw": raw},
             "provenance": raw.get("provenance") or Provenance().model_dump(),
-            "meta": raw.get("meta") or {},
+            "meta": _apply_ttl_to_meta(raw.get("meta") or {}, self._policy),
         }
         return "note", MemoryObject.model_validate(norm)
 
@@ -128,8 +142,35 @@ class WriteBackService:
                 continue
             filtered_facts.append(f)
         facts = filtered_facts
+        
+        # --- 3.5) Дедуп заметок: и против репозитория, и внутри текущего батча ---
+        dedup_notes: List[MemoryObject] = []
+        seen_sigs: set[str] = set()
+        for n in notes:
+            text = str((n.payload or {}).get("text", ""))
+            if not text:
+                dedup_notes.append(n)
+                continue
+            sig = _sig(text)
 
-        # --- 4) Запись по репозиториям ---
+            # дубль уже принятых в этом же батче
+            if sig in seen_sigs:
+                rejected += 1
+                reasons.append(f"duplicate_note:{n.id}")
+                continue
+
+            # дубль уже существующих в хранилище
+            if hasattr(self._vector, "is_duplicate_text") and self._vector.is_duplicate_text(text):
+                rejected += 1
+                reasons.append(f"duplicate_note:{n.id}")
+                continue
+
+            seen_sigs.add(sig)
+            dedup_notes.append(n)
+
+        notes = dedup_notes
+
+        # 4) Запись по репозиториям
         for n in notes:
             try:
                 self._vector.save_object(n)

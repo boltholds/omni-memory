@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from typing import Iterable, List, Optional, Tuple
+import time
 
 from domain.models import Episode, EpisodeEvent
 from domain.ports import IEpisodicRepository
@@ -173,3 +174,20 @@ class EpisodicRepo(IEpisodicRepository):
                 )
             )
         return episodes
+    
+    def gc_expired(self, now: float | None = None) -> int:
+        now = time.time() if now is None else float(now)
+        with self._conn:
+            # удалим события «мертвых» эпизодов каскадно
+            rows = self._conn.execute(
+                "SELECT id, meta FROM episodes"
+            ).fetchall()
+            dead_ids = []
+            for r in rows:
+                meta = _jload(r["meta"]) or {}
+                exp = meta.get("expire_at")
+                if exp is not None and float(exp) < now:
+                    dead_ids.append(r["id"])
+            for eid in dead_ids:
+                self._conn.execute("DELETE FROM episodes WHERE id=?", (eid,))
+            return len(dead_ids)

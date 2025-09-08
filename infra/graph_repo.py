@@ -1,8 +1,9 @@
 # infra/graph_repo.py
 from __future__ import annotations
 
-from typing import List, Optional, Any, Dict
+from typing import List, Any, Dict
 import networkx as nx
+import time
 
 from domain.models import Fact, QuerySpec
 from domain.ports import IGraphRepository
@@ -60,6 +61,20 @@ class GraphRepo(IGraphRepository):
                 continue
             results.append(_edge_to_fact(s, o, k, data))
         return results
+    
+    def gc_expired(self, now: float | None = None) -> int:
+        now = time.time() if now is None else float(now)
+        removed = 0
+        to_remove = []
+        for s, o, k, data in self._g.edges(keys=True, data=True):
+            meta = data.get("meta") or {}
+            exp = meta.get("expire_at")
+            if exp is not None and float(exp) < now:
+                to_remove.append((s, o, k))
+        for s, o, k in to_remove:
+            self._g.remove_edge(s, o, key=k)
+            removed += 1
+        return removed
 
 
 # ----------------- helpers -----------------

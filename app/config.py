@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     embedding_backend: str = "auto"   # auto|st|hash
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     context_max_tokens: int = 400
+    tokenizer_backend: str = "auto"   # auto|tiktoken|simple
+    tokenizer_model: str = "cl100k_base"  # имя модели для tiktoken; можно "cl100k_base"
     # episodic storage
     sqlite_path: str = ":memory:"    # "data/omni.db" в prod
     ner_backend: str = "regex"  # regex|spacy|auto

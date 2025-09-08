@@ -24,6 +24,7 @@ typer = { version = "^0.17.4", extras = ["all"] }
 pydantic-settings = "^2.10.1"
 sentence-transformers = ">=2.7.0,<3.0.0"
 spacy = "<3.8"
+tiktoken = ">=0.7,<0.8"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.4.2"

@@ -6,7 +6,9 @@ import numpy as np
 import json
 from pathlib import Path
 import faiss  # type: ignore
-
+import hashlib
+import re
+import time
 
 from domain.models import MemoryObject
 from domain.ports import IMemoryReadRepository, IMemoryWriteRepository
@@ -22,6 +24,15 @@ def _text_from_payload(payload: dict) -> str:
     )
 
 
+_norm_ws_re = re.compile(r"\s+")
+
+def _text_signature(text: str) -> str:
+    # нормализация: нижний регистр, удаление лишних пробелов, ограничение длины
+    t = _norm_ws_re.sub(" ", text.strip().lower())
+    t = t[:4096]
+    return hashlib.sha1(t.encode("utf-8")).hexdigest()
+
+
 class VectorStoreRepo(IMemoryReadRepository, IMemoryWriteRepository):
     """
     Хранит объекты в памяти, эмбеддинги — через переданный Embedder.
@@ -33,6 +44,8 @@ class VectorStoreRepo(IMemoryReadRepository, IMemoryWriteRepository):
         self._index = faiss.IndexFlatIP(self._dim)
         self._ids: List[str] = []
         self._store: Dict[str, MemoryObject] = {}
+        self._sigs: Dict[str, str] = {}  # id -> signature
+        self._sig_index: Dict[str, str] = {}  # signature -> id (первый встретившийся)
         self._max_elements = max_elements
 
     # ---- write ----
@@ -42,6 +55,18 @@ class VectorStoreRepo(IMemoryReadRepository, IMemoryWriteRepository):
         payload = obj.payload or {}
         text = _text_from_payload(payload)
         emb = self._embedder.embed_one(str(text))[np.newaxis, :].astype("float32")
+        
+        sig = _text_signature(str(text))
+        # если уже существует такой текст — ничего не добавляем (дедуп)
+        if sig in self._sig_index:
+            # но обновим meta/объект (например, TTL) по id-дубликату
+            dup_id = self._sig_index[sig]
+            self._store[dup_id].meta = obj.meta
+            return
+        # иначе сохраняем как новый
+        self._sig_index[sig] = obj.id
+        self._sigs[obj.id] = sig
+                
         self._index.add(emb)
         self._ids.append(obj.id)
         self._store[obj.id] = obj
@@ -62,7 +87,9 @@ class VectorStoreRepo(IMemoryReadRepository, IMemoryWriteRepository):
                 out.append(obj)
         return out
 
-
+    def is_duplicate_text(self, text: str) -> bool:
+        return _text_signature(text) in self._sig_index
+    
     def save(self, dir_path: str) -> None:
         """
         Сохранить индекс и метаданные в папку:
@@ -113,3 +140,46 @@ class VectorStoreRepo(IMemoryReadRepository, IMemoryWriteRepository):
         raw_store = json.loads(store_path.read_text(encoding="utf-8")) or {}
         self._store = {k: MemoryObject.model_validate(v) for k, v in raw_store.items()}
         # capacity оставляем прежним
+
+    def gc_expired(self, now: float | None = None) -> int:
+        now = time.time() if now is None else float(now)
+        to_remove: List[int] = []
+        removed = 0
+        # определим какие ids удалять
+        dead_ids: List[str] = []
+        for obj_id, obj in list(self._store.items()):
+            exp = (obj.meta or {}).get("expire_at")
+            if exp is not None and float(exp) < now:
+                dead_ids.append(obj_id)
+        if not dead_ids:
+            return 0
+        # удалить из faiss (нужно перестроить компактно: пересоберём индекс)
+        # 1) отфильтруем живых
+        keep_mask = [i for i, oid in enumerate(self._ids) if oid not in dead_ids]
+        new_index = faiss.IndexFlatIP(self._dim)
+        # 2) переиндексируем: заново добавим эмбеддинги живых объектов
+        #    (для MVP извлекаем текст и встраиваем снова)
+        self._index = new_index
+        new_ids: List[str] = []
+        for i in keep_mask:
+            oid = self._ids[i]
+            obj = self._store[oid]
+            payload = obj.payload or {}
+            text = (
+                payload.get("text")
+                or payload.get("content")
+                or payload.get("body")
+                or str(payload)
+            )
+            emb = self._embedder.embed_one(str(text))[np.newaxis, :].astype("float32")
+            self._index.add(emb)
+            new_ids.append(oid)
+        self._ids = new_ids
+        # 3) подчистим словари/сигнатуры
+        for oid in dead_ids:
+            removed += 1
+            sig = self._sigs.pop(oid, None)
+            if sig and self._sig_index.get(sig) == oid:
+                self._sig_index.pop(sig, None)
+            self._store.pop(oid, None)
+        return removed

@@ -1,18 +1,16 @@
 # app/context_builder.py
 from __future__ import annotations
 from typing import List, Tuple
-from domain.models import RetrievalBundle, ContextPack, ContextSection
+from app.config import settings
+from app.tokenizer import build_tokenizer
+from domain.models import ContextSection,ContextPack,RetrievalBundle
+
+_tok = build_tokenizer(settings.tokenizer_backend, settings.tokenizer_model)
 
 def _tok_count(s: str) -> int:
-    # грубая оценка количества «токенов»: слова + пунктуация
-    # этого достаточно для бюджетного усечения
-    return max(0, len(s.split()))
+    return _tok.count(s or "")
 
 def _take_lines_up_to_budget(lines: List[str], budget: int) -> Tuple[List[str], bool]:
-    """
-    Возвращает часть списка строк, которые укладываются в бюджет (по словам).
-    Второе значение: был ли обрезан список (True = обрезали).
-    """
     out, used = [], 0
     for line in lines:
         c = _tok_count(line)
@@ -20,12 +18,20 @@ def _take_lines_up_to_budget(lines: List[str], budget: int) -> Tuple[List[str], 
             out.append(line)
             used += c
         else:
-            # попробуем частично урезать последнюю строку
-            remain = max(0, budget - used)
-            if remain > 0:
-                parts = line.split()
-                out.append(" ".join(parts[:remain]) + " …")
-                used = budget
+            # частично усечём строку приблизительно по словам — дешёво и эффективно
+            parts = (line or "").split()
+            # бинарный поиск по количеству слов, чтобы уложиться по токенам
+            lo, hi, best = 0, len(parts), 0
+            while lo <= hi:
+                mid = (lo + hi) // 2
+                candidate = " ".join(parts[:mid])
+                if used + _tok_count(candidate) <= budget:
+                    best = mid
+                    lo = mid + 1
+                else:
+                    hi = mid - 1
+            if best > 0:
+                out.append(" ".join(parts[:best]) + " …")
             return out, True
     return out, False
 
