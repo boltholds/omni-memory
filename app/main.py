@@ -13,6 +13,7 @@ from infra.graph_repo import GraphRepo
 from infra.episodic_repo import EpisodicRepo
 from infra.consistency import SimpleConsistencyEngine
 from infra.metrics import metrics, timeit_request
+from infra.llm_factory import build_llm
 
 from app.config import settings
 from app.admin import router as admin_router, attach_repos
@@ -20,16 +21,34 @@ from app.retriever import Retriever
 from app.orchestrator import Orchestrator
 from app.writeback import WriteBackService
 from app.embeddings import build_embedder
+from app.prompting import make_messages
+
 
 class ContextIn(BaseModel):
     q: str = ""
     max_tokens: Optional[int] = None
+    draft: Optional[bool] = False
+
 
 
 class RetrieveIn(BaseModel):
     q: str
     k_sem: int = 5
     k_eps: int = 3
+
+
+class GenerateIn(BaseModel):
+    q: str
+    context_sections: Optional[List[str]] = None
+    temperature: Optional[float] = None
+
+class GenerateOut(BaseModel):
+    text: str
+    model: str | None = None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    finish_reason: str | None = None
+
 
 def create_app() -> FastAPI:
     app = FastAPI(title="omni-memory", version="0.1.0")
@@ -69,6 +88,17 @@ def create_app() -> FastAPI:
     attach_repos(vrepo, grepo, erepo, writeback_svc)
     app.include_router(admin_router)
 
+    llm_provider = build_llm()  # может быть и None
+
+    @app.post("/generate", response_model=GenerateOut)
+    def generate(inp: GenerateIn):
+        if llm_provider is None:
+            return GenerateOut(text="LLM provider is not configured (LLM_PROVIDER=none).")
+        msgs = make_messages(inp.q, inp.context_sections or [])
+        res = llm_provider.generate(msgs, temperature=inp.temperature or settings.llm_temperature)
+        return GenerateOut(**res)
+
+
     @app.post("/retrieve", response_model=RetrievalBundle)
     def retrieve(inp: RetrieveIn):
         out = retriever.retrieve(inp.q, inp.k_sem, inp.k_eps)
@@ -99,16 +129,26 @@ def create_app() -> FastAPI:
     def context(inp: Optional[ContextIn] = None):
         q = "" if inp is None else inp.q
         bundle = orchestrator.plan_retrieval(q)
+
         # временно «подменим» бюджет из запроса
         if inp and inp.max_tokens:
             from app.config import settings as _settings
             old = _settings.context_max_tokens
             try:
                 _settings.context_max_tokens = int(inp.max_tokens)
-                return orchestrator.assemble_context(bundle)
+                pack = orchestrator.assemble_context(bundle)
             finally:
                 _settings.context_max_tokens = old
-        return orchestrator.assemble_context(bundle)
+        else:
+            pack = orchestrator.assemble_context(bundle)
+
+        # черновик ответа при наличии провайдера
+        if inp and inp.draft and llm_provider is not None:
+            secs = [f"{s.title}:\n{s.body}" for s in pack.sections]
+            msgs = make_messages(q, secs)
+            res = llm_provider.generate(msgs, temperature=settings.llm_temperature)
+            pack.advisories = list(dict.fromkeys(pack.advisories + [f"DRAFT: {res.get('text','').strip()}"]))
+        return pack
     
     
     @app.get("/")

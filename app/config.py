@@ -13,6 +13,16 @@ class Settings(BaseSettings):
     context_max_tokens: int = 400
     tokenizer_backend: str = "auto"   # auto|tiktoken|simple
     tokenizer_model: str = "cl100k_base"  # имя модели для tiktoken; можно "cl100k_base"
+    llm_provider: str = "openai"           # none|openai|ollama (можно "auto" позже)
+    llm_model: str = "/home/vrai/models/Qwen2.5-7B-Instruct-AWQ"       # для OpenAI
+    llm_ollama_model: str = "llama3.1"   # для Ollama
+    llm_temperature: float = 0.3
+    openai_api_key: str  = "EMPTY"
+    openai_base_url: str = "http://10.22.0.6:11434/v1"   # опционально: совместимые провайдеры
+    ollama_base_url: str | None = None
+    
+    
+    
     # episodic storage
     sqlite_path: str = ":memory:"    # "data/omni.db" в prod
     ner_backend: str = "regex"  # regex|spacy|auto
