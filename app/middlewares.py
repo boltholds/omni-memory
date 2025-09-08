@@ -4,12 +4,42 @@ from typing import Callable
 from fastapi import Request, Response
 from app.config import settings
 from app.logging import _redact
+import uuid, time, logging
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
+from contextvars import ContextVar
+from app.config import settings
+
 
 log = logging.getLogger("app.http")
 
+
+request_id_ctx: ContextVar[str] = ContextVar("request_id", default="-")
+
+class RequestIdMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        rid = request.headers.get(settings.request_id_header) or str(uuid.uuid4())
+        token = request_id_ctx.set(rid)
+        t0 = time.perf_counter()
+        try:
+            response: Response = await call_next(request)
+        finally:
+            duration_ms = int((time.perf_counter() - t0) * 1000)
+            extra = {
+                "request_id": rid, "path": str(request.url.path),
+                "method": request.method, "status": getattr(response, "status_code", 0),
+                "duration_ms": duration_ms, "client": request.client.host if request.client else "",
+                "user_agent": request.headers.get("user-agent",""),
+            }
+            log.info("request", extra=extra)
+        response.headers[settings.request_id_header] = rid
+        return response
+
+
 async def tracing_middleware(request: Request, call_next: Callable):
     start = time.perf_counter()
-    rid = request.headers.get(settings.header_request_id) or str(uuid.uuid4())
+    rid = request.headers.get(settings.request_id_header) or str(uuid.uuid4())
     # положим в state
     request.state.request_id = rid
 
@@ -44,7 +74,7 @@ async def tracing_middleware(request: Request, call_next: Callable):
         raise
 
     duration_ms = int((time.perf_counter() - start)*1000)
-    response.headers[settings.header_request_id] = rid
+    response.headers[settings.request_id_header] = rid
 
     extra = {**base, "status": response.status_code, "duration_ms": duration_ms}
     log.info("request", extra=extra)

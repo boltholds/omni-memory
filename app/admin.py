@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from infra.vector_repo import VectorStoreRepo
 from infra.graph_repo import GraphRepo
 from infra.episodic_repo import EpisodicRepo,_jload
@@ -10,7 +10,7 @@ import time
 import logging
 import cProfile, pstats, io
 from pydantic import BaseModel
-
+from app.security import admin_api_key_guard
 
 class LogLevelIn(BaseModel):
     level: str  # DEBUG|INFO|WARNING|ERROR
@@ -28,6 +28,7 @@ class ProfileReq(BaseModel):
 
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(admin_api_key_guard)])
 
 def attach_repos(vrepo, grepo, erepo, writeback: WriteBackService | None = None):
     router.state = {"vrepo": vrepo, "grepo": grepo, "erepo": erepo, "writeback": writeback}  # type: ignore[attr-defined]

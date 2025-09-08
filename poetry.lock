@@ -1608,6 +1608,21 @@ cymem = ">=2.0.2,<2.1.0"
 murmurhash = ">=0.28.0,<1.1.0"
 
 [[package]]
+name = "prometheus-client"
+version = "0.22.1"
+description = "Python client for the Prometheus monitoring system."
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "prometheus_client-0.22.1-py3-none-any.whl", hash = "sha256:cca895342e308174341b2cbf99a56bef291fbc0ef7b9e5412a0f26d653ba7094"},
+    {file = "prometheus_client-0.22.1.tar.gz", hash = "sha256:190f1331e783cf21eb60bca559354e0a4d4378facecf78f5428c39b675d20d28"},
+]
+
+[package.extras]
+twisted = ["twisted"]
+
+[[package]]
 name = "py-spy"
 version = "0.4.1"
 description = ""
@@ -3121,4 +3136,4 @@ files = [
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12,<3.15"
-content-hash = "5d7382b807414faaff274ee280430cc9c44ed1b75978d6f05ded3e8124ddd4fb"
+content-hash = "6f1354254afd3d96632e856784f7b818c01f9dd7650d7ca97cee9f599797e40a"

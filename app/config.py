@@ -40,8 +40,11 @@ class Settings(BaseSettings):
     trace_redact: bool = True         # включить маскировку PII
 
     # заголовки для корреляции
-    header_request_id: str = "X-Request-ID"
-    header_api_key: str = "X-API-Key"     # TODO: Create API_key politics
+    admin_api_key: str = "CHANGE_ME"            # ключ для /admin/*
+    enable_admin: bool = True                   # можно отключить весь /admin
+    rate_limit_per_min: int = 60                # запросов в минуту на IP
+    rate_limit_burst: int = 30                  # начальный "запас"
+    request_id_header: str = "X-Request-Id"     # вход/выход заголовок
     
     # episodic storage
     sqlite_path: str = ":memory:"    # "data/omni.db" в prod

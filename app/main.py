@@ -23,7 +23,8 @@ from app.writeback import WriteBackService
 from app.embeddings import build_embedder
 from app.prompting import PromptRenderer
 from app.logging import setup_logging
-from app.middlewares import tracing_middleware
+from app.middlewares import tracing_middleware,RequestIdMiddleware
+from app.ratelimit import RateLimitMiddleware
 import logging
 
 class ContextIn(BaseModel):
@@ -70,6 +71,10 @@ def create_app() -> FastAPI:
 
     setup_logging()
     # TODO: CORS for future server
+    
+    app.add_middleware(RequestIdMiddleware)
+    app.add_middleware(RateLimitMiddleware)
+    app.middleware("http")(tracing_middleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -77,7 +82,7 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    app.middleware("http")(tracing_middleware)
+    
     
     
     @app.middleware("http")
@@ -87,9 +92,7 @@ def create_app() -> FastAPI:
             response = await call_next(request)
         return response
 
-    @app.get("/healthz")
-    def healthz():
-        return {"status": "ok", "stats": metrics.snapshot()}
+
 
 
     embedder = build_embedder(settings.embedding_backend, settings.embedding_model)
@@ -109,6 +112,11 @@ def create_app() -> FastAPI:
 
     llm_provider = build_llm()  # может быть и None
 
+
+    @app.get("/healthz")
+    def healthz():
+        return {"status": "ok", "stats": metrics.snapshot()}
+    
     @app.post("/generate", response_model=GenerateOut)
     def generate(inp: GenerateIn):
         if llm_provider is None:
