@@ -1,4 +1,4 @@
-from typing import Optional,List, Dict, Any
+from typing import Optional,List, Dict, Any, Literal
 
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
@@ -21,7 +21,7 @@ from app.retriever import Retriever
 from app.orchestrator import Orchestrator
 from app.writeback import WriteBackService
 from app.embeddings import build_embedder
-from app.prompting import make_messages
+from app.prompting import PromptRenderer
 
 
 class ContextIn(BaseModel):
@@ -49,6 +49,19 @@ class GenerateOut(BaseModel):
     completion_tokens: int | None = None
     finish_reason: str | None = None
 
+
+class AnswerIn(BaseModel):
+    q: str
+    lang: Literal["en","ru"] = "en"
+    style: Literal["concise","bullets","detailed"] = "concise"
+    temperature: Optional[float] = None
+    max_tokens: Optional[int] = None  # для сборки контекста
+
+class AnswerOut(BaseModel):
+    answer: str
+    model: Optional[str] = None
+    advisories: List[str] = []
+    used_sections: List[str] = [] 
 
 def create_app() -> FastAPI:
     app = FastAPI(title="omni-memory", version="0.1.0")
@@ -84,6 +97,7 @@ def create_app() -> FastAPI:
     consistency = SimpleConsistencyEngine()
     orchestrator = Orchestrator(retriever, SimpleConsistencyEngine())
     writeback_svc = WriteBackService(vrepo, grepo, erepo, MemoryPolicy())
+    prompt_renderer = PromptRenderer()
     
     attach_repos(vrepo, grepo, erepo, writeback_svc)
     app.include_router(admin_router)
@@ -94,7 +108,7 @@ def create_app() -> FastAPI:
     def generate(inp: GenerateIn):
         if llm_provider is None:
             return GenerateOut(text="LLM provider is not configured (LLM_PROVIDER=none).")
-        msgs = make_messages(inp.q, inp.context_sections or [])
+        msgs = prompt_renderer.make_messages(inp.q, inp.context_sections or [], lang=settings.default_lang, style=settings.default_style)
         res = llm_provider.generate(msgs, temperature=inp.temperature or settings.llm_temperature)
         return GenerateOut(**res)
 
@@ -144,11 +158,44 @@ def create_app() -> FastAPI:
 
         # черновик ответа при наличии провайдера
         if inp and inp.draft and llm_provider is not None:
-            secs = [f"{s.title}:\n{s.body}" for s in pack.sections]
-            msgs = make_messages(q, secs)
+            sections_as_text = [f"{s.title}:\n{s.body}" for s in pack.sections]
+            msgs = prompt_renderer.make_messages(inp.q, sections_as_text, lang=inp.lang, style=inp.style)
             res = llm_provider.generate(msgs, temperature=settings.llm_temperature)
             pack.advisories = list(dict.fromkeys(pack.advisories + [f"DRAFT: {res.get('text','').strip()}"]))
         return pack
+    
+    @app.post("/answer", response_model=AnswerOut)
+    def answer(inp: AnswerIn):
+        # 1) планируем и собираем контекст (учтём max_tokens, если задан)
+        bundle = orchestrator.plan_retrieval(inp.q)
+        if inp.max_tokens:
+            old = settings.context_max_tokens
+            settings.context_max_tokens = int(inp.max_tokens)
+            try:
+                pack = orchestrator.assemble_context(bundle)
+            finally:
+                settings.context_max_tokens = old
+        else:
+            pack = orchestrator.assemble_context(bundle)
+
+        # 2) вызываем LLM
+        if llm_provider is None:
+            return AnswerOut(
+                answer="LLM provider is not configured (LLM_PROVIDER=none).",
+                advisories=pack.advisories,
+                used_sections=[s.title for s in pack.sections],
+            )
+
+        sections_as_text = [f"{s.title}:\n{s.body}" for s in pack.sections]
+        msgs = prompt_renderer.make_messages(inp.q, sections_as_text, lang=inp.lang, style=inp.style)
+        res = llm_provider.generate(msgs, temperature=inp.temperature or settings.llm_temperature)
+
+        return AnswerOut(
+            answer=res.get("text","").strip(),
+            model=res.get("model"),
+            advisories=pack.advisories,
+            used_sections=[s.title for s in pack.sections],
+        )
     
     
     @app.get("/")

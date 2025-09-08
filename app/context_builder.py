@@ -94,6 +94,6 @@ def build_context(bundle: RetrievalBundle, max_tokens: int) -> Tuple[ContextPack
 
     # Если бюджета изначально не хватило ни на что
     if not sections:
-        advisories.append("Context budget too small; nothing included.")
+        advisories.append("No relevant items found for the query or context budget too small; nothing included.")
 
     return ContextPack(sections=sections, advisories=advisories), advisories
