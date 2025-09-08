@@ -25,6 +25,25 @@ VECTOR_SIZE = Gauge("vector_store_objects", "Objects in vector store", registry=
 GRAPH_FACTS = Gauge("graph_facts_total", "Facts in graph store", registry=REG)
 EPISODES = Gauge("episodes_total", "Episodes stored", registry=REG)
 
+
+QA_HALLUS = Counter(
+    "qa_hallucinations_total", "Hallucinations detected", ["reason"]
+)
+QA_CONFLICT_MISS = Counter(
+    "qa_conflict_misses_total", "Conflict existed but not surfaced"
+)
+QA_ANSWERS = Counter("qa_answers_scored", "Answers evaluated")
+QA_CONSIST = Histogram(
+    "qa_answer_consistency", "Answer-context consistency (0..1)",
+    buckets=[0.0, 0.25, 0.5, 0.75, 0.9, 1.0]
+)
+QA_JUDGE_LAT = Histogram(
+    "qa_judge_latency_seconds", "Judge latency (s)",
+    buckets=[0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5]
+)
+
+
+
 router = APIRouter()
 
 @router.get("/metrics")

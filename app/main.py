@@ -26,7 +26,7 @@ from app.logging import setup_logging
 from app.middlewares import tracing_middleware,RequestIdMiddleware,MetricsMiddleware
 from app.ratelimit import RateLimitMiddleware
 from app.metrics import router as metrics_router
-
+from app.services.answering import quality_judge
 import logging
 
 class ContextIn(BaseModel):
@@ -194,6 +194,17 @@ def create_app() -> FastAPI:
         else:
             pack = orchestrator.assemble_context(bundle)
 
+
+        # 1.1) (ищем конфликты среди фактов, которые попали в текущий bundle)
+        conflict_report = consistency.detect_conflicts(bundle.facts)  
+        conflicts = getattr(conflict_report, "conflicts", [])         
+        if conflicts:                                                 
+            metrics.inc("conflicts_detected", len(conflicts))         
+            # Добавим краткий дайджест в advisories                 
+            conflict_summaries = [f"{c.key}: {', '.join(c.variants)}" for c in conflicts]  
+            pack.advisories.append(f"Detected {len(conflicts)} conflict(s): "               
+                                + "; ".join(conflict_summaries)[:300])                 
+
         # 2) Logging
         
         biz = logging.getLogger("app.biz")
@@ -202,7 +213,7 @@ def create_app() -> FastAPI:
             "advisories": "; ".join(pack.advisories)[:300],
         })
         
-        # 2) вызываем LLM
+        # 3) Если LLM не настроен — возвращаем подсказку
         if llm_provider is None:
             return AnswerOut(
                 answer="LLM provider is not configured (LLM_PROVIDER=none).",
@@ -210,12 +221,21 @@ def create_app() -> FastAPI:
                 used_sections=[s.title for s in pack.sections],
             )
 
+        # 4) Генерация ответа LLM
         sections_as_text = [f"{s.title}:\n{s.body}" for s in pack.sections]
         msgs = prompt_renderer.make_messages(inp.q, sections_as_text, lang=inp.lang, style=inp.style)
         res = llm_provider.generate(msgs, temperature=inp.temperature or settings.llm_temperature)
-
+        answer_text = (res.get("text") or "").strip()
+        
+        # 5) Оценка качества ответа (галлюцинации/конфликты)        
+        judge_notes = quality_judge(answer_text,                      
+                                    [s.title for s in pack.sections], 
+                                    conflicts)                        
+        if judge_notes:                                              
+            # Без дублей, коротко                                     
+            pack.advisories = list(dict.fromkeys(pack.advisories + judge_notes)) 
         return AnswerOut(
-            answer=res.get("text","").strip(),
+            answer=answer_text,
             model=res.get("model"),
             advisories=pack.advisories,
             used_sections=[s.title for s in pack.sections],
