@@ -57,4 +57,13 @@ async def tracing_middleware(request: Request, call_next: Callable):
         except Exception:
             pass
 
+    SLA_MS = {
+    "/answer": 6000, # было 1200 — поднимаем до 6s под текущую модель
+    "/retrieve": 300,
+    "/context": 500,
+    }
+    thr = SLA_MS.get(request.url.path)
+    if thr and duration_ms > thr:
+        log.warning("slow_endpoint", extra={**extra, "sla_ms": thr})
+    
     return response

@@ -125,5 +125,21 @@ def vector_load_cmd(dir: Path = typer.Argument(...), url: str = typer.Option(_ur
         typer.echo(f"vector loaded <- {dir}")
 
 
+import subprocess, sys, os, time
+@app.command("flamegraph")
+def flamegraph_cmd(pid: int = typer.Argument(...), seconds: int = 15, out: Path = typer.Argument(Path("flame.svg"))):
+    """
+    Снимок CPU flamegraph у живого процесса (Linux/macOS). Требует установленный py-spy.
+    """
+    cmd = [
+        sys.executable, "-m", "py_spy", "record",
+        "-p", str(pid), "-d", str(seconds),
+        "-o", str(out)
+    ]
+    typer.echo(f"Running: {' '.join(cmd)}")
+    subprocess.run(cmd, check=True)
+    typer.echo(f"Flamegraph saved -> {out}")
+
+
 if __name__ == "__main__":
     app()

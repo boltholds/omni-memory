@@ -13,6 +13,8 @@ import time
 from domain.models import MemoryObject
 from domain.ports import IMemoryReadRepository, IMemoryWriteRepository
 from app.embeddings import Embedder, HashEmbedder
+from app.profiling import timed
+from app.stats import stats
 
 
 def _text_from_payload(payload: dict) -> str:
@@ -72,20 +74,25 @@ class VectorStoreRepo(IMemoryReadRepository, IMemoryWriteRepository):
         self._store[obj.id] = obj
 
     # ---- read ----
+    @timed("retriever.retrieve", slow_ms=100)
     def semantic_search(self, text: str, k: int = 5) -> List[MemoryObject]:
-        if len(self._ids) == 0:
-            return []
-        q = self._embedder.embed_one(text)[np.newaxis, :].astype("float32")
-        _D, I = self._index.search(q, min(k, len(self._ids)))
-        out: List[MemoryObject] = []
-        for row in I[0].tolist():
-            if row == -1:
-                continue
-            obj_id = self._ids[row]
-            obj = self._store.get(obj_id)
-            if obj:
-                out.append(obj)
-        return out
+        stop = stats.timeit("vector.search_ms")
+        try:
+            if len(self._ids) == 0:
+                return []
+            q = self._embedder.embed_one(text)[np.newaxis, :].astype("float32")
+            _D, I = self._index.search(q, min(k, len(self._ids)))
+            out: List[MemoryObject] = []
+            for row in I[0].tolist():
+                if row == -1:
+                    continue
+                obj_id = self._ids[row]
+                obj = self._store.get(obj_id)
+                if obj:
+                    out.append(obj)
+            return out
+        finally:
+            stop()
 
     def is_duplicate_text(self, text: str) -> bool:
         return _text_signature(text) in self._sig_index

@@ -7,7 +7,8 @@ from domain.models import RetrievalBundle, MemoryObject, Fact, Episode
 from domain.ports import IRetriever, IMemoryReadRepository, IGraphRepository, IEpisodicRepository
 from app.entities import build_entity_stack
 from app.config import settings
-
+from app.profiling import timed
+from app.stats import stats
 
 def _simple_entities(query: str) -> List[str]:
     """
@@ -44,14 +45,18 @@ class Retriever(IRetriever):
         self._episodic = episodic_repo
         self._extractor, self._linker = build_entity_stack(settings.ner_backend, settings.entity_aliases)
 
-
+    @timed("retriever.retrieve", slow_ms=100)
     def retrieve(self, query: str, k_sem: int = 5, k_eps: int = 3) -> RetrievalBundle:
         ents = _simple_entities(query)
 
         # I Семантические чанки
+        stop_vec = stats.timeit("retriever.vec_ms")
         semantic_chunks = self._vector.semantic_search(query, k=k_sem)
-
+        stop_vec()
+        
+        
         # II Факты (по subject и по object для каждой выделенной сущности)
+        stop_kg = stats.timeit("retriever.kg_ms")
         facts: List[Fact] = []
         seen_ids: Set[str] = set()
         for e in ents:
@@ -63,8 +68,11 @@ class Retriever(IRetriever):
             for f in self._graph.query(object=e):
                 if f.id not in seen_ids:
                     seen_ids.add(f.id); facts.append(f)
-
+        stop_kg()
+        
         # III Эпизоды (пользователя пока не извлекаем -> None)
+        stop_ep = stats.timeit("retriever.ep_ms")
         episodes: List[Episode] = self._episodic.search(user=None, entities=ents, k=k_eps)
-
+        stop_ep()
+        
         return RetrievalBundle(semantic_chunks=semantic_chunks, facts=facts, episodes=episodes, citations=[])

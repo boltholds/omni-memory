@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import List
 from domain.llm import ILLMProvider, Msg, LLMResult
 from app.config import settings
+from app.stats import stats
 import logging, time
 log = logging.getLogger("app.llm")
 
@@ -18,6 +19,7 @@ class OpenAILLM(ILLMProvider):
 
     def generate(self, messages: List[Msg], temperature: float = 0.3) -> LLMResult:
         t0 = time.perf_counter()
+        stop_llm = stats.timeit("llm.call_ms")
         try:
             resp = self.client.chat.completions.create(
                 model=self.model,
@@ -52,3 +54,5 @@ class OpenAILLM(ILLMProvider):
                 "duration_ms": dur,
             })
             raise
+        finally:
+            stop_llm()

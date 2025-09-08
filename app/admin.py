@@ -8,6 +8,9 @@ from app.writeback import WriteBackService
 from pydantic import BaseModel
 import time
 import logging
+import cProfile, pstats, io
+from pydantic import BaseModel
+
 
 class LogLevelIn(BaseModel):
     level: str  # DEBUG|INFO|WARNING|ERROR
@@ -18,6 +21,11 @@ class VectorPathIn(BaseModel):
 class GCRequest(BaseModel):
     dry_run: bool = False
     now: float | None = None
+
+class ProfileReq(BaseModel):
+    seconds: int = 5  # лимит
+    target: str = "answer"  # "retrieve"|"context"|"answer"
+
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -77,6 +85,38 @@ def set_log_level(inp: LogLevelIn):
     for name in ("app.http", "app.llm", "uvicorn.access", "uvicorn.error"):
         logging.getLogger(name).setLevel(level)
     return {"status": "ok", "level": inp.level.upper()}
+
+
+@router.post("/profile/once")
+def profile_once(inp: ProfileReq):
+    """
+    Синхронно: прогоняет типовой сценарий (напр. answer на фиксированный вопрос)
+    и возвращает топ функций по времени.
+    """
+    import orchestrator
+    pr = cProfile.Profile()
+    pr.enable()
+    # --- прогон демо ---
+    if inp.target == "retrieve":
+        orchestrator.plan_retrieval("Where is Alice?")
+    elif inp.target == "context":
+        b = orchestrator.plan_retrieval("Where is Alice?")
+        orchestrator.assemble_context(b)
+    else:
+        from app.main import llm_provider
+        b = orchestrator.plan_retrieval("Where is Alice?")
+        pack = orchestrator.assemble_context(b)
+        if llm_provider:
+            from app.prompting import PromptRenderer
+            prnd = PromptRenderer()
+            msgs = prnd.make_messages("Where is Alice?", [f"{s.title}:\n{s.body}" for s in pack.sections])
+            llm_provider.generate(msgs)
+    pr.disable()
+    s = io.StringIO()
+    ps = pstats.Stats(pr, stream=s).sort_stats("cumulative")
+    ps.print_stats(40)  # топ-40
+    return {"report": s.getvalue()}
+
 
 @router.post("/gc")
 def gc(inp: GCRequest):

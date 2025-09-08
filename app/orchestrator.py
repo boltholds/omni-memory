@@ -7,6 +7,7 @@ from domain.ports import IMemoryOrchestrator, IRetriever, IConsistencyEngine
 from infra.metrics import metrics
 from app.context_builder import build_context
 from app.config import settings
+from app.profiling import timed
 
 
 class Orchestrator(IMemoryOrchestrator):
@@ -18,6 +19,7 @@ class Orchestrator(IMemoryOrchestrator):
         metrics.inc("context_calls", 1)
         return self._retriever.retrieve(query)
 
+    @timed("retriever.retrieve", slow_ms=100)
     def assemble_context(self, bundle: RetrievalBundle) -> ContextPack:
             # 1) Сначала строим базовые секции без конфликтов (по бюджету)
             pack, advisories = build_context(bundle, settings.context_max_tokens)

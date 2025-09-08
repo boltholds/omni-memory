@@ -8,7 +8,7 @@ import time
 
 from domain.models import Episode, EpisodeEvent
 from domain.ports import IEpisodicRepository
-
+from app.profiling import timed
 
 _SCHEMA = """
 PRAGMA journal_mode=WAL;
@@ -100,7 +100,8 @@ class EpisodicRepo(IEpisodicRepository):
                     for ev in episode.events
                 ],
             )
-
+    
+    @timed("retriever.retrieve", slow_ms=100)
     def search(self, user: str | None, entities: list[str], k: int = 5) -> List[Episode]:
         """
         Простой поиск:

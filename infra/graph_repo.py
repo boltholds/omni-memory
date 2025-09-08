@@ -7,7 +7,7 @@ import time
 
 from domain.models import Fact, QuerySpec
 from domain.ports import IGraphRepository
-
+from app.profiling import timed
 
 class GraphRepo(IGraphRepository):
     """
@@ -38,6 +38,7 @@ class GraphRepo(IGraphRepository):
         else:
             self._g.add_edge(s, o, key=fact.id, **_fact_to_edge_attrs(fact))
 
+    @timed("retriever.retrieve", slow_ms=100)
     def query(self, **query_spec: Any) -> List[Fact]:
         """
         Фильтр по равенству: subject / predicate / object.
