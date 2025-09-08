@@ -15,7 +15,7 @@ from domain.ports import IMemoryReadRepository, IMemoryWriteRepository
 from app.embeddings import Embedder, HashEmbedder
 from app.profiling import timed
 from app.stats import stats
-
+from app.metrics import VECTOR_SIZE
 
 def _text_from_payload(payload: dict) -> str:
     return (
@@ -50,6 +50,10 @@ class VectorStoreRepo(IMemoryReadRepository, IMemoryWriteRepository):
         self._sig_index: Dict[str, str] = {}  # signature -> id (первый встретившийся)
         self._max_elements = max_elements
 
+
+    def count(self) -> int:
+        return len(self._ids)
+    
     # ---- write ----
     def save_object(self, obj: MemoryObject) -> None:
         if len(self._ids) >= self._max_elements:
@@ -72,6 +76,10 @@ class VectorStoreRepo(IMemoryReadRepository, IMemoryWriteRepository):
         self._index.add(emb)
         self._ids.append(obj.id)
         self._store[obj.id] = obj
+        try:
+            VECTOR_SIZE.set(self.count())
+        except Exception:
+            pass
 
     # ---- read ----
     @timed("retriever.retrieve", slow_ms=100)
@@ -189,4 +197,10 @@ class VectorStoreRepo(IMemoryReadRepository, IMemoryWriteRepository):
             if sig and self._sig_index.get(sig) == oid:
                 self._sig_index.pop(sig, None)
             self._store.pop(oid, None)
-        return removed
+            
+        try:
+            VECTOR_SIZE.set(self.count())
+        except Exception:
+            pass
+        finally:
+            return removed

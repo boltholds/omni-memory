@@ -6,7 +6,7 @@ from app.stats import stats
 
 import logging, time
 log = logging.getLogger("app.llm")
-
+from app.metrics import LLM_CALLS, LLM_LATENCY
 
 class OpenAILLM(ILLMProvider):
     def __init__(self, model: str | None = None):
@@ -17,10 +17,12 @@ class OpenAILLM(ILLMProvider):
             timeout=30.0,  # короткий таймаут
         )
         self.model = model or settings.llm_model
+        self.status = "init"
 
     def generate(self, messages: List[Msg], temperature: float = 0.3) -> LLMResult:
         t0 = time.perf_counter()
         stop_llm = stats.timeit("llm.call_ms")
+        self.status = "ok"
         try:
             resp = self.client.chat.completions.create(
                 model=self.model,
@@ -49,11 +51,15 @@ class OpenAILLM(ILLMProvider):
                 "finish_reason": getattr(choice, "finish_reason", "") or "",
             }
         except Exception as e:
-            dur = int((time.perf_counter() - t0) * 1000)
+            
+            self.status = "error"
             log.exception("llm_call_failed", extra={
                 "model": self.model,
                 "duration_ms": dur,
             })
             raise
         finally:
+            dur = int((time.perf_counter() - t0) * 1000)
             stop_llm()
+            LLM_CALLS.labels(self.model, self.status).inc()
+            LLM_LATENCY.labels(self.model, self.status).observe(dur)

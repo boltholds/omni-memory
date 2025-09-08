@@ -2,20 +2,48 @@ from __future__ import annotations
 import logging, time, uuid
 from typing import Callable
 from fastapi import Request, Response
-from app.config import settings
-from app.logging import _redact
+
 import uuid, time, logging
+from contextvars import ContextVar
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
-from contextvars import ContextVar
-from app.config import settings
+from starlette.routing import Match
 
+from app.config import settings
+from app.logging import _redact
+from app.metrics import HTTP_REQUESTS, HTTP_LATENCY
 
 log = logging.getLogger("app.http")
 
 
 request_id_ctx: ContextVar[str] = ContextVar("request_id", default="-")
+
+
+class MetricsMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        # Нормализованный шаблон пути ("/answer", "/context", "/admin/reset", ...)
+        route_pattern = request.url.path
+        if route_pattern == "/metrics":
+            return await call_next(request)
+        for route in request.app.router.routes:
+            match, _ = route.matches(request.scope)
+            if match == Match.FULL and hasattr(route, "path_format"):
+                route_pattern = route.path_format
+                break
+
+        method = request.method
+        t0 = time.perf_counter()
+        try:
+            response = await call_next(request)
+            status = str(response.status_code)
+            return response
+        finally:
+            dur = time.perf_counter() - t0
+            # Записываем длительность уже с реальным статусом
+            HTTP_LATENCY.labels(method, route_pattern, status).observe(dur)
+            HTTP_REQUESTS.labels(method, route_pattern, status).inc()
+
 
 class RequestIdMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):

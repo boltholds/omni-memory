@@ -9,6 +9,8 @@ import time
 from domain.models import Episode, EpisodeEvent
 from domain.ports import IEpisodicRepository
 from app.profiling import timed
+from app.metrics import EPISODES
+
 
 _SCHEMA = """
 PRAGMA journal_mode=WAL;
@@ -100,6 +102,15 @@ class EpisodicRepo(IEpisodicRepository):
                     for ev in episode.events
                 ],
             )
+            try:
+                EPISODES.set(self.count())
+            except Exception:
+                # не ломаем бизнес-операцию, если метрики недоступны
+                pass
+    
+    def count(self) -> int:
+        row = self._conn.execute("SELECT COUNT(*) AS n FROM episodes").fetchone()
+        return int(row["n"] if isinstance(row, sqlite3.Row) else row[0])
     
     @timed("retriever.retrieve", slow_ms=100)
     def search(self, user: str | None, entities: list[str], k: int = 5) -> List[Episode]:
@@ -191,4 +202,10 @@ class EpisodicRepo(IEpisodicRepository):
                     dead_ids.append(r["id"])
             for eid in dead_ids:
                 self._conn.execute("DELETE FROM episodes WHERE id=?", (eid,))
-            return len(dead_ids)
+            removed = len(dead_ids)
+        # Обновляем Gauge после удаления
+        try:
+            EPISODES.set(self.count())
+        except Exception:
+            pass
+        return removed

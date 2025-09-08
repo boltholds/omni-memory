@@ -8,6 +8,8 @@ import time
 from domain.models import Fact, QuerySpec
 from domain.ports import IGraphRepository
 from app.profiling import timed
+from app.metrics import GRAPH_FACTS
+
 
 class GraphRepo(IGraphRepository):
     """
@@ -20,6 +22,10 @@ class GraphRepo(IGraphRepository):
     def __init__(self) -> None:
         self._g = nx.MultiDiGraph()
 
+    
+    def count(self) -> int:
+        return len(self._g)
+    
     # ---- IGraphRepository ----
     def save_fact(self, fact: Fact) -> None:
         s = fact.subject
@@ -37,6 +43,11 @@ class GraphRepo(IGraphRepository):
             self._g[s][o][fact.id].update(_fact_to_edge_attrs(fact))
         else:
             self._g.add_edge(s, o, key=fact.id, **_fact_to_edge_attrs(fact))
+        try:
+            GRAPH_FACTS.set(self.count())
+        except Exception:
+            pass
+
 
     @timed("retriever.retrieve", slow_ms=100)
     def query(self, **query_spec: Any) -> List[Fact]:
@@ -75,7 +86,12 @@ class GraphRepo(IGraphRepository):
         for s, o, k in to_remove:
             self._g.remove_edge(s, o, key=k)
             removed += 1
-        return removed
+        try:
+            GRAPH_FACTS.set(self.count())
+        except Exception:
+            pass
+        finally:
+            return removed
 
 
 # ----------------- helpers -----------------

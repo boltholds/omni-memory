@@ -23,8 +23,10 @@ from app.writeback import WriteBackService
 from app.embeddings import build_embedder
 from app.prompting import PromptRenderer
 from app.logging import setup_logging
-from app.middlewares import tracing_middleware,RequestIdMiddleware
+from app.middlewares import tracing_middleware,RequestIdMiddleware,MetricsMiddleware
 from app.ratelimit import RateLimitMiddleware
+from app.metrics import router as metrics_router
+
 import logging
 
 class ContextIn(BaseModel):
@@ -73,6 +75,7 @@ def create_app() -> FastAPI:
     # TODO: CORS for future server
     
     app.add_middleware(RequestIdMiddleware)
+    app.add_middleware(MetricsMiddleware)  
     app.add_middleware(RateLimitMiddleware)
     app.middleware("http")(tracing_middleware)
     app.add_middleware(
@@ -109,7 +112,7 @@ def create_app() -> FastAPI:
     
     attach_repos(vrepo, grepo, erepo, writeback_svc)
     app.include_router(admin_router)
-
+    app.include_router(metrics_router, tags=["metrics"])
     llm_provider = build_llm()  # может быть и None
 
 
