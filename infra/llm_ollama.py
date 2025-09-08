@@ -4,6 +4,8 @@ from typing import List
 import httpx
 from domain.llm import ILLMProvider, Msg, LLMResult
 from app.config import settings
+import logging, time
+log = logging.getLogger("app.llm")
 
 class OllamaLLM(ILLMProvider):
     def __init__(self, model: str | None = None, base_url: str | None = None):
@@ -11,15 +13,34 @@ class OllamaLLM(ILLMProvider):
         self.base = (base_url or settings.ollama_base_url).rstrip("/")
 
     def generate(self, messages: List[Msg], temperature: float = 0.3) -> LLMResult:
-        # склеим историю в один prompt (просто и совместимо)
-        prompt = "\n".join(f"{m['role']}: {m['content']}" for m in messages)
-        payload = {"model": self.model, "prompt": prompt, "options": {"temperature": temperature}, "stream": False}
-        with httpx.Client(timeout=120.0) as client:
-            r = client.post(f"{self.base}/api/generate", json=payload)
-            r.raise_for_status()
-            data = r.json()
-        return {
-            "text": data.get("response", "") or "",
-            "model": self.model,
-            "finish_reason": "stop",
-        }
+        url = f"{self.base}/chat/completions"
+        payload = {"model": self.model, "messages": messages, "temperature": float(temperature), "stream": False}
+        headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+
+        t0 = time.perf_counter()
+        try:
+            with httpx.Client(timeout=30.0) as client:
+                r = client.post(url, json=payload, headers=headers)
+                dur = int((time.perf_counter() - t0) * 1000)
+                r.raise_for_status()
+                data = r.json()
+                ch = data["choices"][0]
+                text = ch.get("message", {}).get("content", "") or ch.get("text", "") or ""
+                usage = data.get("usage") or {}
+                log.info("llm_call_ok", extra={
+                    "model": self.model,
+                    "duration_ms": dur,
+                    "prompt_tokens": usage.get("prompt_tokens", 0),
+                    "completion_tokens": usage.get("completion_tokens", 0),
+                })
+                return {
+                    "text": text,
+                    "model": self.model,
+                    "prompt_tokens": usage.get("prompt_tokens", 0),
+                    "completion_tokens": usage.get("completion_tokens", 0),
+                    "finish_reason": ch.get("finish_reason", ""),
+                }
+        except Exception as e:
+            dur = int((time.perf_counter() - t0) * 1000)
+            log.exception("llm_call_failed", extra={"model": self.model, "duration_ms": dur})
+            raise

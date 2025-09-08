@@ -7,6 +7,10 @@ from typing import Any, Dict
 from app.writeback import WriteBackService
 from pydantic import BaseModel
 import time
+import logging
+
+class LogLevelIn(BaseModel):
+    level: str  # DEBUG|INFO|WARNING|ERROR
 
 class VectorPathIn(BaseModel):
     dir: str
@@ -64,6 +68,15 @@ def vector_load(inp: VectorPathIn):
     st["vrepo"].load(inp.dir)
     return {"status": "ok", "dir": inp.dir}
 
+@router.post("/log-level")
+def set_log_level(inp: LogLevelIn):
+    level = getattr(logging, inp.level.upper(), None)
+    if level is None:
+        return {"status": "error", "message": f"Unknown level: {inp.level}"}
+    logging.getLogger().setLevel(level)
+    for name in ("app.http", "app.llm", "uvicorn.access", "uvicorn.error"):
+        logging.getLogger(name).setLevel(level)
+    return {"status": "ok", "level": inp.level.upper()}
 
 @router.post("/gc")
 def gc(inp: GCRequest):

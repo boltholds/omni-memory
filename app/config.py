@@ -24,14 +24,28 @@ class Settings(BaseSettings):
     prompt_template_dir: str = "templates/prompt"
     prompt_system_template: str = "system.j2"
     prompt_user_template: str = "user.j2"
-    # язык/стиль по умолчанию на всякий случай
+    # язык/стиль по умолчанию 
     default_lang: str = "en"           # "en" | "ru"
     default_style: str = "concise"     # "concise" | "bullets" | "detailed"
     
+    log_level: str = "INFO"           # DEBUG|INFO|WARNING|ERROR
+    log_json: bool = True             # JSON-формат логов
+    log_file: str | None = "logs/app.log"
+    log_rotation_mb: int = 20         # ротация ~20MB
+    log_keep_files: int = 5
+
+    trace_sample_rate: float = 1.0    # 0..1 — доля запросов для расширенного трейсинга
+    trace_log_body: bool = False      # логировать тело запроса/ответа (осторожно)
+    trace_body_max: int = 1000        # макс. символов тела
+    trace_redact: bool = True         # включить маскировку PII
+
+    # заголовки для корреляции
+    header_request_id: str = "X-Request-ID"
+    header_api_key: str = "X-API-Key"     # TODO: Create API_key politics
     
     # episodic storage
     sqlite_path: str = ":memory:"    # "data/omni.db" в prod
-    ner_backend: str = "regex"  # regex|spacy|auto
+    ner_backend: str = "spacy"  # regex|spacy|auto
     entity_aliases: Dict[str, List[str]] = {
         "alice": ["alisa", "алиса"],
         "lighthouse": ["beacon", "phare", "маяк"],

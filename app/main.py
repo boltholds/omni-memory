@@ -22,7 +22,9 @@ from app.orchestrator import Orchestrator
 from app.writeback import WriteBackService
 from app.embeddings import build_embedder
 from app.prompting import PromptRenderer
-
+from app.logging import setup_logging
+from app.middlewares import tracing_middleware
+import logging
 
 class ContextIn(BaseModel):
     q: str = ""
@@ -66,6 +68,7 @@ class AnswerOut(BaseModel):
 def create_app() -> FastAPI:
     app = FastAPI(title="omni-memory", version="0.1.0")
 
+    setup_logging()
     # TODO: CORS for future server
     app.add_middleware(
         CORSMiddleware,
@@ -74,6 +77,8 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.middleware("http")(tracing_middleware)
+    
     
     @app.middleware("http")
     async def metrics_mw(request, call_next):
@@ -178,6 +183,14 @@ def create_app() -> FastAPI:
         else:
             pack = orchestrator.assemble_context(bundle)
 
+        # 2) Logging
+        
+        biz = logging.getLogger("app.biz")
+        biz.info("context_built", extra={
+            "used_sections": [s.title for s in pack.sections],
+            "advisories": "; ".join(pack.advisories)[:300],
+        })
+        
         # 2) вызываем LLM
         if llm_provider is None:
             return AnswerOut(
