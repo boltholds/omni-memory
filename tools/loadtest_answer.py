@@ -1,4 +1,6 @@
-import time, httpx, statistics
+import time
+import httpx
+import statistics
 URL="http://127.0.0.1:8000/answer"
 def one():
     with httpx.Client(timeout=30.0) as c:

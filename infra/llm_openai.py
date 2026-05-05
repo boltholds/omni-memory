@@ -4,7 +4,8 @@ from domain.llm import ILLMProvider, Msg, LLMResult
 from app.config import settings
 from app.stats import stats
 
-import logging, time
+import logging
+import time
 log = logging.getLogger("app.llm")
 from app.metrics import LLM_CALLS, LLM_LATENCY
 
@@ -50,7 +51,7 @@ class OpenAILLM(ILLMProvider):
                 "completion_tokens": getattr(usage, "completion_tokens", 0) or 0,
                 "finish_reason": getattr(choice, "finish_reason", "") or "",
             }
-        except Exception as e:
+        except Exception:
             
             self.status = "error"
             log.exception("llm_call_failed", extra={

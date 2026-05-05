@@ -1,4 +1,4 @@
-from domain.models import RetrievalBundle, MemoryObject, Fact, Provenance, ContextSection
+from domain.models import RetrievalBundle, MemoryObject, Fact, Provenance
 from app.orchestrator import Orchestrator
 from infra.consistency import SimpleConsistencyEngine
 

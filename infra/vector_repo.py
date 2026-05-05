@@ -16,6 +16,7 @@ from app.embeddings import Embedder, HashEmbedder
 from app.profiling import timed
 from app.stats import stats
 from app.metrics import VECTOR_SIZE
+from infra.exceptions import CapacityExceeded, EmbedderDimMismatch, SnapshotCorrupted, PersistenceError
 
 def _text_from_payload(payload: dict) -> str:
     return (
@@ -55,9 +56,9 @@ class VectorStoreRepo(IMemoryReadRepository, IMemoryWriteRepository):
         return len(self._ids)
     
     # ---- write ----
-    def save_object(self, obj: MemoryObject) -> None:
+    def save_object(self, obj: MemoryObject) -> bool:
         if len(self._ids) >= self._max_elements:
-            raise RuntimeError("VectorStoreRepo capacity reached")
+            raise CapacityExceeded(f"VectorStoreRepo capacity reached: {self._max_elements}")
         payload = obj.payload or {}
         text = _text_from_payload(payload)
         emb = self._embedder.embed_one(str(text))[np.newaxis, :].astype("float32")
@@ -68,7 +69,7 @@ class VectorStoreRepo(IMemoryReadRepository, IMemoryWriteRepository):
             # но обновим meta/объект (например, TTL) по id-дубликату
             dup_id = self._sig_index[sig]
             self._store[dup_id].meta = obj.meta
-            return
+            return False
         # иначе сохраняем как новый
         self._sig_index[sig] = obj.id
         self._sigs[obj.id] = sig
@@ -80,16 +81,20 @@ class VectorStoreRepo(IMemoryReadRepository, IMemoryWriteRepository):
             VECTOR_SIZE.set(self.count())
         except Exception:
             pass
+        finally:
+            return True
 
     # ---- read ----
     @timed("retriever.retrieve", slow_ms=100)
     def semantic_search(self, text: str, k: int = 5) -> List[MemoryObject]:
         stop = stats.timeit("vector.search_ms")
+        if k <= 0:
+            raise ValueError("k must be > 0")
         try:
-            if len(self._ids) == 0:
+            if (sizeids := len(self._ids)) == 0:
                 return []
             q = self._embedder.embed_one(text)[np.newaxis, :].astype("float32")
-            _D, I = self._index.search(q, min(k, len(self._ids)))
+            _D, I = self._index.search(q, min(k, sizeids))
             out: List[MemoryObject] = []
             for row in I[0].tolist():
                 if row == -1:
@@ -114,18 +119,22 @@ class VectorStoreRepo(IMemoryReadRepository, IMemoryWriteRepository):
             - meta.json    — {'dim': ..., 'count': ...}
         """
         p = Path(dir_path)
-        p.mkdir(parents=True, exist_ok=True)
+        try:
+            p.mkdir(parents=True, exist_ok=True)
 
-        # 1) индекс
-        faiss.write_index(self._index, str(p / "index.faiss"))
-        # 2) ids
-        (p / "ids.json").write_text(json.dumps(self._ids, ensure_ascii=False, indent=2), encoding="utf-8")
-        # 3) store
-        store_dump = {k: v.model_dump() for k, v in self._store.items()}
-        (p / "store.json").write_text(json.dumps(store_dump, ensure_ascii=False), encoding="utf-8")
-        # 4) meta
-        meta = {"dim": self._dim, "count": len(self._ids)}
-        (p / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+            # 1) индекс
+            faiss.write_index(self._index, str(p / "index.faiss"))
+            # 2) ids
+            (p / "ids.json").write_text(json.dumps(self._ids, ensure_ascii=False, indent=2), encoding="utf-8")
+            # 3) store
+            store_dump = {k: v.model_dump() for k, v in self._store.items()}
+            (p / "store.json").write_text(json.dumps(store_dump, ensure_ascii=False), encoding="utf-8")
+            # 4) meta
+            meta = {"dim": self._dim, "count": len(self._ids)}
+            (p / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        except (OSError, json.JSONDecodeError, TypeError) as e:
+            raise PersistenceError(f"Failed to save snapshot to {p}") from e
 
     def load(self, dir_path: str) -> None:
         """
@@ -142,10 +151,15 @@ class VectorStoreRepo(IMemoryReadRepository, IMemoryWriteRepository):
             raise FileNotFoundError(f"Vector snapshot incomplete in {p}")
 
         # meta для проверки
-        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as e:
+            raise SnapshotCorrupted(f"Bad meta.json in {p}") from e
+        
+        
         dim = int(meta.get("dim", 0))
         if dim and dim != self._dim:
-            raise RuntimeError(f"Embedder dim mismatch: file={dim}, repo={self._dim}")
+            raise EmbedderDimMismatch(f"Embedder dim mismatch: file={dim}, repo={self._dim}")
 
         # 1) индекс
         self._index = faiss.read_index(str(idx_path))

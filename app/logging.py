@@ -1,6 +1,10 @@
 from __future__ import annotations
-import json, logging, logging.handlers, sys, re
-from datetime import datetime
+import json
+import logging
+import logging.handlers
+import sys
+import re
+from datetime import datetime, UTC
 from typing import Any, Dict
 from app.config import settings
 
@@ -15,7 +19,7 @@ def _redact(s: str) -> str:
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         payload: Dict[str, Any] = {
-            "ts": datetime.utcfromtimestamp(record.created).isoformat() + "Z",
+            "ts": datetime.fromtimestamp(record.created, UTC).isoformat().replace("+00:00", "Z"),
             "level": record.levelname,
             "logger": record.name,
             "msg": record.getMessage(),

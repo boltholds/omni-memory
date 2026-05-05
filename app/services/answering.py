@@ -1,5 +1,6 @@
 # app/services/answering.py (или там, где собираете ответ)
-import re, time
+import re
+import time
 from app.metrics import QA_HALLUS, QA_CONFLICT_MISS, QA_ANSWERS, QA_CONSIST, QA_JUDGE_LAT
 
 HEDGE_RE = re.compile(r"\b(don't know|unknown|insufficient|no (?:data|context))\b", re.I)

@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings
+from pydantic import ConfigDict
 from typing import Dict, List
 
 class Settings(BaseSettings):
@@ -57,8 +58,8 @@ class Settings(BaseSettings):
     }
     
     
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
+    model_config = ConfigDict(
+        env_file = ".env",
+        env_file_encoding = "utf-8")
 
 settings = Settings()

@@ -1,9 +1,10 @@
 from __future__ import annotations
-import logging, time, uuid
+import logging
+import time
+import uuid
 from typing import Callable
 from fastapi import Request, Response
 
-import uuid, time, logging
 from contextvars import ContextVar
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -22,10 +23,10 @@ request_id_ctx: ContextVar[str] = ContextVar("request_id", default="-")
 
 class MetricsMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        # Нормализованный шаблон пути ("/answer", "/context", "/admin/reset", ...)
         route_pattern = request.url.path
         if route_pattern == "/metrics":
             return await call_next(request)
+
         for route in request.app.router.routes:
             match, _ = route.matches(request.scope)
             if match == Match.FULL and hasattr(route, "path_format"):
@@ -33,14 +34,15 @@ class MetricsMiddleware(BaseHTTPMiddleware):
                 break
 
         method = request.method
+        status = "500"
         t0 = time.perf_counter()
+
         try:
             response = await call_next(request)
             status = str(response.status_code)
             return response
         finally:
             dur = time.perf_counter() - t0
-            # Записываем длительность уже с реальным статусом
             HTTP_LATENCY.labels(method, route_pattern, status).observe(dur)
             HTTP_REQUESTS.labels(method, route_pattern, status).inc()
 
@@ -50,19 +52,28 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
         rid = request.headers.get(settings.request_id_header) or str(uuid.uuid4())
         token = request_id_ctx.set(rid)
         t0 = time.perf_counter()
+        response: Response | None = None
+
         try:
-            response: Response = await call_next(request)
+            response = await call_next(request)
+            response.headers[settings.request_id_header] = rid
+            return response
         finally:
             duration_ms = int((time.perf_counter() - t0) * 1000)
+            status_code = response.status_code if response is not None else 500
+
             extra = {
-                "request_id": rid, "path": str(request.url.path),
-                "method": request.method, "status": getattr(response, "status_code", 0),
-                "duration_ms": duration_ms, "client": request.client.host if request.client else "",
-                "user_agent": request.headers.get("user-agent",""),
+                "request_id": rid,
+                "path": str(request.url.path),
+                "method": request.method,
+                "status": status_code,
+                "duration_ms": duration_ms,
+                "client": request.client.host if request.client else "",
+                "user_agent": request.headers.get("user-agent", ""),
             }
+
             log.info("request", extra=extra)
-        response.headers[settings.request_id_header] = rid
-        return response
+            request_id_ctx.reset(token)
 
 
 async def tracing_middleware(request: Request, call_next: Callable):

@@ -5,7 +5,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from domain.models import RetrievalBundle, WriteReport, ConflictReport, ContextPack, MemoryObject, Fact
+from domain.models import RetrievalBundle, WriteReport, ConflictReport, ContextPack, Fact
 from domain.policy import MemoryPolicy
 
 from infra.vector_repo import VectorStoreRepo
@@ -58,7 +58,7 @@ class GenerateOut(BaseModel):
 class AnswerIn(BaseModel):
     q: str
     lang: Literal["en","ru"] = "en"
-    style: Literal["concise","bullets","detailed"] = "concise"
+    style: Literal["concise", "bullets", "detailed", "plain"] = "concise"
     temperature: Optional[float] = None
     max_tokens: Optional[int] = None  # для сборки контекста
 
@@ -220,17 +220,20 @@ def create_app() -> FastAPI:
                 advisories=pack.advisories,
                 used_sections=[s.title for s in pack.sections],
             )
-
+        
         # 4) Генерация ответа LLM
         sections_as_text = [f"{s.title}:\n{s.body}" for s in pack.sections]
-        msgs = prompt_renderer.make_messages(inp.q, sections_as_text, lang=inp.lang, style=inp.style)
+        msgs = prompt_renderer.make_messages(inp.q, sections_as_text, lang=inp.lang, style = "concise" if inp.style == "plain" else inp.style)
         res = llm_provider.generate(msgs, temperature=inp.temperature or settings.llm_temperature)
         answer_text = (res.get("text") or "").strip()
         
         # 5) Оценка качества ответа (галлюцинации/конфликты)        
-        judge_notes = quality_judge(answer_text,                      
-                                    [s.title for s in pack.sections], 
-                                    conflicts)                        
+        used_sections = [
+            {"title": s.title, "body": s.body}
+            for s in pack.sections
+        ]
+
+        judge_notes = quality_judge(answer_text, used_sections, conflicts)                       
         if judge_notes:                                              
             # Без дублей, коротко                                     
             pack.advisories = list(dict.fromkeys(pack.advisories + judge_notes)) 

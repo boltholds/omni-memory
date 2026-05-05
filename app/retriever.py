@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import List, Set
 
-from domain.models import RetrievalBundle, MemoryObject, Fact, Episode
+from domain.models import RetrievalBundle, Fact, Episode
 from domain.ports import IRetriever, IMemoryReadRepository, IGraphRepository, IEpisodicRepository
 from app.entities import build_entity_stack
 from app.config import settings
@@ -47,7 +47,8 @@ class Retriever(IRetriever):
 
     @timed("retriever.retrieve", slow_ms=100)
     def retrieve(self, query: str, k_sem: int = 5, k_eps: int = 3) -> RetrievalBundle:
-        ents = _simple_entities(query)
+        raw_ents = self._extractor.extract(query)
+        ents = self._linker.link_all(raw_ents)
 
         # I Семантические чанки
         stop_vec = stats.timeit("retriever.vec_ms")

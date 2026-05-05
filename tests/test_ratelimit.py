@@ -5,7 +5,6 @@ client = TestClient(app)
 
 
 def test_ratelimit_basic(monkeypatch):
-    from app.config import settings
     monkeypatch.setenv("RATE_LIMIT_PER_MIN", "2")
     monkeypatch.setenv("RATE_LIMIT_BURST", "1")
     # три запроса подряд -> третий 429

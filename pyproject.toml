@@ -13,7 +13,6 @@ packages = [
 
 [tool.poetry.dependencies]
 python = ">=3.12,<3.15"
-faiss-cpu = "^1.12.0"
 fastapi = "^0.116.1"
 uvicorn = "^0.35.0"
 pydantic = "^2.11.7"
@@ -30,6 +29,7 @@ jinja2 = ">=3.1,<4.0"
 py-spy = "^0.4.1"
 starlette = "^0.47.3"
 prometheus-client = "^0.22.1"
+faiss-cpu = "^1.13.2"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.4.2"
@@ -54,3 +54,11 @@ python_version = "3.12"
 strict = false
 ignore_missing_imports = true
 warn_unused_ignores = true
+
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    "ignore::DeprecationWarning:faiss.*",
+    "ignore::DeprecationWarning:spacy.*",
+    "ignore::DeprecationWarning:weasel.*",
+]

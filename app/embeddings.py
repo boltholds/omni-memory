@@ -1,6 +1,9 @@
 # app/embeddings.py
 from __future__ import annotations
-from typing import List, Protocol, Optional
+import hashlib
+import math
+import re
+from typing import List, Protocol, Optional, Iterable
 import numpy as np
 
 class Embedder(Protocol):
@@ -8,28 +11,58 @@ class Embedder(Protocol):
     def embed(self, texts: List[str]) -> np.ndarray: ...
     def embed_one(self, text: str) -> np.ndarray: ...
 
-# ---------- Hash (лёгкий дефолт) ----------
+# ---------- Hash ----------
+
+TOKEN_RE = re.compile(r"[a-zA-Zа-яА-Я0-9_]+")
+
 
 class HashEmbedder:
     def __init__(self, dim: int = 384):
         self.dim = dim
 
-    def _hash_vec(self, text: str) -> np.ndarray:
-        v = np.zeros(self.dim, dtype="float32")
-        for tok in text.lower().split():
-            h = hash(tok)
-            i = h % self.dim
-            sign = 1.0 if (h >> 1) & 1 else -1.0
-            v[i] += sign
-        # l2 normalize
-        n = np.linalg.norm(v) + 1e-12
-        return (v / n).astype("float32")
+    def _tokens(self, text: str) -> list[str]:
+        return [token.lower() for token in TOKEN_RE.findall(text)]
 
-    def embed(self, texts: List[str]) -> np.ndarray:
-        return np.vstack([self._hash_vec(t) for t in texts])
+    def _features(self, text: str) -> Iterable[tuple[str, float]]:
+        tokens = self._tokens(text)
+
+        for token in tokens:
+            yield f"u:{token}", 1.0
+
+        for a, b in zip(tokens, tokens[1:]):
+            yield f"b:{a}_{b}", 1.5
+
+        for token in tokens:
+            if len(token) < 3:
+                continue
+
+            wrapped = f"<{token}>"
+            for i in range(len(wrapped) - 2):
+                yield f"c3:{wrapped[i:i + 3]}", 0.25
 
     def embed_one(self, text: str) -> np.ndarray:
-        return self._hash_vec(text)
+        vec = np.zeros(self.dim, dtype=np.float32)
+
+        for feature, weight in self._features(text):
+            digest = hashlib.blake2b(feature.encode("utf-8"), digest_size=8).digest()
+            n = int.from_bytes(digest, "big")
+
+            idx = n % self.dim
+            sign = 1.0 if ((n >> 63) & 1) == 0 else -1.0
+
+            vec[idx] += sign * weight
+
+        norm = float(np.linalg.norm(vec))
+        if norm == 0.0:
+            return vec
+
+        return (vec / norm).astype(np.float32)
+
+    def embed(self, texts: List[str]) -> np.ndarray:
+        if not texts:
+            return np.empty((0, self.dim), dtype=np.float32)
+
+        return np.vstack([self.embed_one(text) for text in texts]).astype(np.float32)
 
 # ---------- Sentence-Transformers (опционально) ----------
 

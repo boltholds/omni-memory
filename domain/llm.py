@@ -1,6 +1,6 @@
 # domain/llm.py
 from __future__ import annotations
-from typing import List, Protocol, TypedDict, Optional
+from typing import List, Protocol, TypedDict
 
 class Msg(TypedDict):
     role: str   # "system" | "user" | "assistant" | "tool"

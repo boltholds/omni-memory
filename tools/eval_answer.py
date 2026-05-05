@@ -1,4 +1,6 @@
-import json, time, httpx, statistics
+import time
+import httpx
+import statistics
 CASES = [
   {"q":"Where is Alice?", "expect_conflict": True},
   {"q":"List facts about Alice", "expect_conflict": False},

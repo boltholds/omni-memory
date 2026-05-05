@@ -1,5 +1,7 @@
 from __future__ import annotations
-import time, logging, functools
+import time
+import logging
+import functools
 from typing import Callable, TypeVar, Any, Optional
 
 T = TypeVar("T")

@@ -1,5 +1,5 @@
 # tests/test_writeback.py
-from domain.models import Provenance, EpisodeEvent
+from domain.models import Provenance
 from domain.policy import MemoryPolicy
 from infra.vector_repo import VectorStoreRepo
 from infra.graph_repo import GraphRepo
@@ -7,9 +7,10 @@ from infra.episodic_repo import EpisodicRepo
 from app.writeback import WriteBackService
 
 
+
 def test_writeback_accepts_verified_fact_and_rejects_pii_note():
     wb = WriteBackService(
-        vector_repo=VectorStoreRepo(dim=64),
+        vector_repo=VectorStoreRepo(),
         graph_repo=GraphRepo(),
         episodic_repo=EpisodicRepo(),
         policy=MemoryPolicy(),  # accept=0.6
@@ -36,7 +37,7 @@ def test_writeback_accepts_verified_fact_and_rejects_pii_note():
 
 def test_writeback_saves_episode_and_note_without_pii():
     wb = WriteBackService(
-        vector_repo=VectorStoreRepo(dim=32),
+        vector_repo=VectorStoreRepo(),
         graph_repo=GraphRepo(),
         episodic_repo=EpisodicRepo(),
     )

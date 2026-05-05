@@ -211,3 +211,6 @@ marimo/_lsp/
 __marimo__/
 
 .pytest_cache/
+
+omni-memory.zip
+omni-memory.code-workspace

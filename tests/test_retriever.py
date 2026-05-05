@@ -18,7 +18,7 @@ def _episode(eid: str, parts, summary, events) -> Episode:
 
 def test_retrieve_bundle_contains_items_from_all_sources():
     # Vector
-    vrepo = VectorStoreRepo(dim=128)
+    vrepo = VectorStoreRepo()
     vrepo.save_object(_obj("n1", "Alice was near the lighthouse"))
     vrepo.save_object(_obj("n2", "An old stone bridge stands over the river"))
 
@@ -52,7 +52,7 @@ def test_retrieve_bundle_contains_items_from_all_sources():
 
 
 def test_retrieve_handles_empty_sources_gracefully():
-    vrepo = VectorStoreRepo(dim=64)
+    vrepo = VectorStoreRepo()
     grepo = GraphRepo()
     erepo = EpisodicRepo()
     r = Retriever(vrepo, grepo, erepo)

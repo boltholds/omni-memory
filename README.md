@@ -1,12 +1,13 @@
 # omni-memory MVP
 
-Мини-система памяти для LLM: векторное хранилище, граф фактов, эпизодическое хранилище и оркестратор.
+LLM agents forget, duplicate facts, and hallucinate over outdated memory. Omni Memory gives agents structured long-term memory with conflict detection, write-back, and explainable context.
 
-## Быстрый старт
+## Start
 
 ```bash
-# Установить зависимости
+
 poetry install
 
-# Запуск сервиса
+
 poetry run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
