@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "omni-memory"
+name = "omni_memory"
 version = "0.1.0"
 description = "Omni-memory MVP"
 authors = ["Bolt Hold <you@example.com>"]
