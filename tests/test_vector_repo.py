@@ -1,6 +1,6 @@
 # tests/test_vector_repo.py
 from domain.models import MemoryObject
-from infra.vector_repo import VectorStoreRepo
+from infra.repo.vector_repo import VectorStoreRepo
 from infra.exceptions import CapacityExceeded
 import pytest 
 

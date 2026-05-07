@@ -9,17 +9,27 @@ class Provenance(BaseModel):
 
 class MemoryObject(BaseModel):
     id: str
-    type: str  # "note" | "fact" | "episode"
+    type: str
     payload: Dict[str, Any]
-    provenance: Provenance = Provenance()
+    provenance: Provenance = Field(default_factory=Provenance)
     meta: Dict[str, Any] = Field(default_factory=dict)
+
 
 class Fact(BaseModel):
     id: str
     subject: str
     predicate: str
     object: str
-    provenance: Provenance = Provenance()
+    provenance: Provenance = Field(default_factory=Provenance)
+    meta: Dict[str, Any] = Field(default_factory=dict)
+
+
+class Episode(BaseModel):
+    id: str
+    participants: List[str] = Field(default_factory=list)
+    summary: str = ""
+    events: List[EpisodeEvent] = Field(default_factory=list)
+    provenance: Provenance = Field(default_factory=Provenance)
     meta: Dict[str, Any] = Field(default_factory=dict)
 
 class EpisodeEvent(BaseModel):
@@ -28,13 +38,6 @@ class EpisodeEvent(BaseModel):
     summary: str
     refs: Dict[str, Any] = Field(default_factory=dict)
 
-class Episode(BaseModel):
-    id: str
-    participants: List[str] = Field(default_factory=list)
-    summary: str = ""
-    events: List[EpisodeEvent] = Field(default_factory=list)
-    provenance: Provenance = Provenance()
-    meta: Dict[str, Any] = Field(default_factory=dict)
 
 class RetrievalBundle(BaseModel):
     semantic_chunks: List[MemoryObject] = Field(default_factory=list)

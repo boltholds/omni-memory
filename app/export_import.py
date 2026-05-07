@@ -5,7 +5,7 @@ import json
 import sqlite3
 
 from domain.models import MemoryObject, Fact, Episode, EpisodeEvent
-from app.writeback import WriteBackService
+from app.writeback_legacy import WriteBackService
 
 
 def export_memory(vrepo, grepo, erepo) -> Dict[str, Any]:

@@ -1,8 +1,8 @@
 import time
-from infra.vector_repo import VectorStoreRepo
-from infra.graph_repo import GraphRepo
-from infra.episodic_repo import EpisodicRepo
-from app.writeback import WriteBackService
+from infra.repo.vector_repo import VectorStoreRepo
+from infra.repo.graph_repo import GraphRepo
+from infra.repo.episodic_repo import EpisodicRepo
+from app.writeback_legacy import WriteBackService
 from domain.policy import MemoryPolicy
 
 def test_note_dedup_and_gc_vector():

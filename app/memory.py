@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import re
 import time
 import uuid
-import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -10,15 +10,37 @@ from .embeddings import build_embedder
 from .config import settings
 from .retriever import Retriever
 from .orchestrator import Orchestrator
-from .writeback import WriteBackService
 from .prompting import PromptRenderer
 
 from domain.policy import MemoryPolicy
-from infra.vector_repo import VectorStoreRepo
-from infra.graph_repo import GraphRepo
-from infra.episodic_repo import EpisodicRepo
+from domain.distiller import IMemoryDistiller
+from domain.writeback import WritebackRequest, WritebackResult
+from domain.models import WriteReport
+
+from infra.repo.vector_repo import VectorStoreRepo
+from infra.repo.graph_repo import GraphRepo
+from infra.repo.episodic_repo import EpisodicRepo
 from infra.consistency import SimpleConsistencyEngine
-from infra.llm_factory import build_llm
+from infra.llm.llm_factory import build_llm
+
+from app.writeback.service import WriteBackService, MemoryRepositoryRouter
+from app.writeback.writeback_policies import (
+    WritebackPolicyResolver,
+    FactWritebackPolicy,
+    EpisodeWritebackPolicy,
+    PreferenceWritebackPolicy,
+    NoteWritebackPolicy,
+)
+from app.writeback.memory_policies import (
+    ProvenancePolicy,
+    TTLPolicy,
+    TTLConfig,
+    PiiPolicy,
+    ConflictPolicy,
+    ConfidencePolicy,
+    ConfidenceConfig,
+    DedupPolicy,
+)
 
 
 @dataclass
@@ -29,13 +51,77 @@ class MemoryAnswer:
     context: dict[str, Any]
 
 
-class OmniMemory:
-    def __init__(self, use_llm: bool = False) -> None:
-        embedder = build_embedder(settings.embedding_backend, settings.embedding_model)
+def _svc(
+    *,
+    vector_repo: VectorStoreRepo,
+    graph_repo: GraphRepo,
+    episodic_repo: EpisodicRepo,
+    reject_conflicts: bool = False,
+) -> WriteBackService:
+    memory_policy = MemoryPolicy()
 
-        self.vector_repo = VectorStoreRepo(embedder=embedder)
-        self.graph_repo = GraphRepo()
-        self.episodic_repo = EpisodicRepo(db_path=settings.sqlite_path)
+    resolver = WritebackPolicyResolver(
+        [
+            FactWritebackPolicy(),
+            EpisodeWritebackPolicy(),
+            PreferenceWritebackPolicy(),
+            NoteWritebackPolicy(),
+        ]
+    )
+
+    write_policies = [
+        ProvenancePolicy(),
+        TTLPolicy(
+            TTLConfig(
+                high_volatility_days=memory_policy.ttl.high_volatility_days,
+                normal_days=memory_policy.ttl.normal_days,
+            )
+        ),
+        PiiPolicy(),
+        ConflictPolicy(reject_on_conflict=reject_conflicts),
+        ConfidencePolicy(
+            ConfidenceConfig(
+                accept=memory_policy.confidence.accept,
+                reject=memory_policy.confidence.reject,
+                default_fact_confidence=1.0,
+                reject_when_missing=False,
+            )
+        ),
+        DedupPolicy(),
+    ]
+
+    repository_router = MemoryRepositoryRouter(
+        vector_repo=vector_repo,
+        graph_repo=graph_repo,
+        episodic_repo=episodic_repo,
+    )
+
+    return WriteBackService(
+        resolver=resolver,
+        write_policies=write_policies,
+        repository_router=repository_router
+    )
+
+
+class OmniMemory:
+    def __init__(
+        self,
+        use_llm: bool = False,
+        distiller: IMemoryDistiller | None = None,
+        *,
+        vector_repo: VectorStoreRepo | None = None,
+        graph_repo: GraphRepo | None = None,
+        episodic_repo: EpisodicRepo | None = None,
+        reject_conflicts: bool = False,
+        llm: Any | None = None,
+    ) -> None:
+        embedder = None
+        if vector_repo is None:
+            embedder = build_embedder(settings.embedding_backend, settings.embedding_model)
+
+        self.vector_repo = vector_repo or VectorStoreRepo(embedder=embedder)
+        self.graph_repo = graph_repo or GraphRepo()
+        self.episodic_repo = episodic_repo or EpisodicRepo(db_path=settings.sqlite_path)
 
         self.retriever = Retriever(
             self.vector_repo,
@@ -50,16 +136,62 @@ class OmniMemory:
             self.consistency,
         )
 
-        self.writeback_service = WriteBackService(
-            self.vector_repo,
-            self.graph_repo,
-            self.episodic_repo,
-            MemoryPolicy(),
+        self.writeback_service = _svc(
+            vector_repo=self.vector_repo,
+            graph_repo=self.graph_repo,
+            episodic_repo=self.episodic_repo,
+            reject_conflicts=reject_conflicts,
         )
 
+        self.distiller = distiller
         self.prompt_renderer = PromptRenderer()
-        self.llm = build_llm() if use_llm else None
+        self.llm = llm if llm is not None else (build_llm() if use_llm else None)
 
+    def write_items(
+        self,
+        items: list[dict[str, Any]],
+        *,
+        source: str = "user",
+        dry_run: bool = False,
+        meta: dict[str, Any] | None = None,
+    ) -> WriteReport:
+        """Write raw memory items through the same writeback pipeline used by all interfaces."""
+        request = WritebackRequest.model_validate(
+            {
+                "source": source,
+                "dry_run": dry_run,
+                "meta": meta or {},
+                "items": items,
+            }
+        )
+        result = self.writeback_service.write(request)
+        return self._to_write_report(result)
+
+    def write_items_raw(
+        self,
+        items: list[dict[str, Any]],
+        *,
+        source: str = "user",
+        dry_run: bool = False,
+        meta: dict[str, Any] | None = None,
+    ) -> WritebackResult:
+        request = WritebackRequest.model_validate(
+            {
+                "source": source,
+                "dry_run": dry_run,
+                "meta": meta or {},
+                "items": items,
+            }
+        )
+        return self.writeback_service.write(request)
+
+    @staticmethod
+    def _to_write_report(result: WritebackResult) -> WriteReport:
+        return WriteReport(
+            saved=result.saved_count,
+            rejected=result.rejected_count + result.error_count,
+            reasons=result.reasons,
+        )
 
     def write_fact(
         self,
@@ -75,19 +207,36 @@ class OmniMemory:
             "subject": subject.lower().strip(),
             "predicate": predicate.lower().strip(),
             "object": object_.lower().strip(),
-            "confidence": confidence,
             "provenance": {
                 "source": source,
                 "time": time.time(),
                 "meta": {},
             },
-            "meta": {},
+            "meta": {
+                "confidence": confidence,
+            },
         }
 
-        report = self.writeback_service.write([fact])
+        request = WritebackRequest.model_validate(
+            {
+                "source": source,
+                "items": [fact],
+            }
+        )
 
-        if report.rejected:
-            raise RuntimeError(f"Write rejected: {report.reasons}")
+        report = self.writeback_service.write(request)
+
+        if report.rejected_count or report.error_count:
+            details = [
+                {
+                    "reason": d.reason,
+                    "detail": d.detail,
+                    "policy": d.policy,
+                    "id": d.id,
+                }
+                for d in [*report.rejected, *report.errors]
+            ]
+            raise RuntimeError(f"Write rejected: {details}")
 
     def ask(self, question: str, debug: bool = False) -> MemoryAnswer:
         bundle = self.orchestrator.plan_retrieval(question)

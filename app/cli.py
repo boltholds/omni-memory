@@ -9,33 +9,17 @@ from typing import Any
 import httpx
 import typer
 
-from app.writeback import WriteBackService
-from domain.policy import MemoryPolicy
-from infra.episodic_repo import EpisodicRepo
-from infra.graph_repo import GraphRepo
-from infra.vector_repo import VectorStoreRepo
+from app.builder import build_memory
+
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
 DEFAULT_URL = "http://127.0.0.1:8000"
 
 
-def _svc() -> WriteBackService:
-    """
-    Локальный writeback-сервис для CLI.
-
-    Сейчас он использует отдельные in-memory репозитории.
-    Это подходит для smoke-тестов и локальной валидации файлов.
-    Если нужно, чтобы CLI реально писал в ту же память, что и приложение,
-    сюда позже стоит подключить persistent repo/backend из settings.
-    """
-    return WriteBackService(
-        vector_repo=VectorStoreRepo(),
-        graph_repo=GraphRepo(),
-        episodic_repo=EpisodicRepo(),
-        policy=MemoryPolicy(),
-    )
-
+def _svc():
+    """Local central memory facade for CLI commands."""
+    return build_memory(use_llm=False, reject_conflicts=False)
 
 def _print_report(prefix: str, rep: Any) -> None:
     saved = getattr(rep, "saved", None)
@@ -118,7 +102,7 @@ def _parse_notes_md(path: Path) -> list[dict[str, Any]]:
 def load_facts(path: Path = typer.Argument(..., exists=True, readable=True)):
     """Локально загрузить facts JSON через WriteBackService."""
     items = _load_json_list(path)
-    rep = _svc().write(items)
+    rep = _svc().write_items(items)
     _print_report("facts", rep)
 
 
@@ -126,7 +110,7 @@ def load_facts(path: Path = typer.Argument(..., exists=True, readable=True)):
 def load_notes(path: Path = typer.Argument(..., exists=True, readable=True)):
     """Локально загрузить notes markdown через WriteBackService."""
     items = _parse_notes_md(path)
-    rep = _svc().write(items)
+    rep = _svc().write_items(items)
     _print_report("notes", rep)
 
 
@@ -134,7 +118,7 @@ def load_notes(path: Path = typer.Argument(..., exists=True, readable=True)):
 def load_episodes(path: Path = typer.Argument(..., exists=True, readable=True)):
     """Локально загрузить episodes JSON через WriteBackService."""
     items = _load_json_list(path)
-    rep = _svc().write(items)
+    rep = _svc().write_items(items)
     _print_report("episodes", rep)
 
 

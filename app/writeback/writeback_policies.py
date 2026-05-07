@@ -1,0 +1,171 @@
+
+from typing import Any, Protocol
+from domain.models import (MemoryObject, Fact, Episode)
+from domain.writeback import (WritebackRawItem, WritebackConversionPolicy, get_item_id, normalize_provenance, clean_meta, DomainMemoryObject)
+from domain.models import Provenance, Fact, Episode, MemoryObject, EpisodeEvent
+from domain.policy import MemoryPolicy
+
+
+class WritebackPolicyNotFoundError(ValueError):
+    pass
+
+
+class WritebackPolicyResolver:
+    def __init__(self, policies: list[WritebackConversionPolicy]) -> None:
+        if not policies:
+            raise ValueError("At least one writeback conversion policy is required")
+
+        self._policies = policies
+
+    def resolve(self, item: WritebackRawItem) -> WritebackConversionPolicy:
+        for policy in self._policies:
+            if policy.matches(item):
+                return policy
+
+        raise WritebackPolicyNotFoundError("No writeback conversion policy matched item")
+    
+    
+
+def _parse(self, raw: dict[str, Any]) -> tuple[str, DomainMemoryObject]:
+    item = WritebackRawItem.model_validate(raw)
+    policy = self._resolver.resolve(item)
+    return policy.kind, policy.convert(item, memory_policy=self._policy)
+
+
+
+
+
+class FactWritebackPolicy:
+    name = "fact_writeback"
+    kind = "fact"
+
+    def matches(self, item: WritebackRawItem) -> bool:
+        if item.type == "fact":
+            return True
+
+        payload = item.payload or {}
+
+        return (
+            item.subject is not None
+            and item.predicate is not None
+            and item.object is not None
+        ) or (
+            payload.get("subject") is not None
+            and payload.get("predicate") is not None
+            and payload.get("object") is not None
+        )
+
+    def convert(self, item: WritebackRawItem) -> Fact:
+        payload = item.payload or {}
+
+        return Fact(
+            id=get_item_id(item, prefix="fact"),
+            subject=item.subject or str(payload.get("subject", "")),
+            predicate=item.predicate or str(payload.get("predicate", "")),
+            object=item.object or str(payload.get("object", "")),
+            provenance=normalize_provenance(item),
+            meta=clean_meta(item),
+        )
+        
+    
+class EpisodeWritebackPolicy:
+        name = "episode_writeback"
+        kind = "episode"
+
+        def matches(self, item: WritebackRawItem) -> bool:
+            if item.type == "episode":
+                return True
+
+            payload = item.payload or {}
+
+            return (
+                item.participants is not None
+                or item.events is not None
+                or payload.get("participants") is not None
+                or payload.get("events") is not None
+            )
+
+        def convert(self, item: WritebackRawItem) -> Episode:
+            payload = item.payload or {}
+
+            raw_events = item.events
+            if raw_events is None:
+                raw_events = payload.get("events", [])
+
+            events = [
+                event if isinstance(event, EpisodeEvent) else EpisodeEvent.model_validate(event)
+                for event in raw_events or []
+            ]
+
+            return Episode(
+                id=get_item_id(item, prefix="episode"),
+                participants=item.participants or payload.get("participants", []),
+                summary=item.summary or payload.get("summary", ""),
+                events=events,
+                provenance=normalize_provenance(item),
+                meta=clean_meta(item),
+            )
+    
+        
+class NoteWritebackPolicy:
+    name = "note_writeback"
+    kind = "note"
+
+    def matches(self, item: WritebackRawItem) -> bool:
+        return True
+
+    def convert(self, item: WritebackRawItem) -> MemoryObject:
+        payload = dict(item.payload or {})
+
+        if "text" not in payload and item.text is not None:
+            payload["text"] = item.text
+
+        if "text" not in payload and item.content is not None:
+            payload["text"] = item.content
+
+        if not payload:
+            payload = {"raw": item.model_dump(exclude_none=True)}
+
+        return MemoryObject(
+            id=get_item_id(item, prefix="note"),
+            type=item.type or "note",
+            payload=payload,
+            provenance=normalize_provenance(item),
+            meta=clean_meta(item),
+        )
+        
+
+class PreferenceWritebackPolicy:
+    name = "preference_writeback"
+    kind = "preference"
+
+    def matches(self, item: WritebackRawItem) -> bool:
+        if item.type == "preference":
+            return True
+
+        payload = item.payload or {}
+
+        return (
+            payload.get("type") == "preference"
+            or payload.get("kind") == "preference"
+            or "preference" in payload
+        )
+
+    def convert(self, item: WritebackRawItem) -> MemoryObject:
+        payload = dict(item.payload or {})
+
+        if "text" not in payload and item.text is not None:
+            payload["text"] = item.text
+
+        if "text" not in payload and item.content is not None:
+            payload["text"] = item.content
+
+        payload.setdefault("kind", "preference")
+
+        return MemoryObject(
+            id=get_item_id(item, prefix="pref"),
+            type="preference",
+            payload=payload,
+            provenance=normalize_provenance(item),
+            meta=clean_meta(item),
+        )

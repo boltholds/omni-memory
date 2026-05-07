@@ -1,6 +1,6 @@
 # tests/test_episodic_repo.py
 from domain.models import Episode, EpisodeEvent, Provenance
-from infra.episodic_repo import EpisodicRepo
+from infra.repo.episodic_repo import EpisodicRepo
 
 def _ep(
     id_: str,

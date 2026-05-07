@@ -9,10 +9,10 @@ def build_llm() -> ILLMProvider | None:
         # ключ обязателен
         if not settings.openai_api_key:
             raise RuntimeError("OPENAI_API_KEY не задан")
-        from infra.llm_openai import OpenAILLM
+        from infra.llm.llm_openai import OpenAILLM
         return OpenAILLM(model=settings.llm_model)
     if prov == "ollama":
-        from infra.llm_ollama import OllamaLLM
+        from infra.llm.llm_ollama import OllamaLLM
         return OllamaLLM(model=settings.llm_ollama_model, base_url=settings.ollama_base_url)
     # none
     return None

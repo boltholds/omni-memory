@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends
-from infra.episodic_repo import _jload
+from infra.repo.episodic_repo import _jload
 from app.export_import import export_memory, import_memory
 from typing import Any, Dict
-from app.writeback import WriteBackService
+from app.writeback_legacy import WriteBackService
 from pydantic import BaseModel
 import time
 import logging

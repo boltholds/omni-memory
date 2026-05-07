@@ -6,28 +6,21 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from domain.models import RetrievalBundle, WriteReport, ConflictReport, ContextPack, Fact
-from domain.policy import MemoryPolicy
-
-from infra.vector_repo import VectorStoreRepo
-from infra.graph_repo import GraphRepo
-from infra.episodic_repo import EpisodicRepo
-from infra.consistency import SimpleConsistencyEngine
 from infra.metrics import metrics, timeit_request
-from infra.llm_factory import build_llm
 
 from app.config import settings
+from app.builder import build_memory
 from app.admin import router as admin_router, attach_repos
-from app.retriever import Retriever
-from app.orchestrator import Orchestrator
-from app.writeback import WriteBackService
-from app.embeddings import build_embedder
-from app.prompting import PromptRenderer
 from app.logging import setup_logging
-from app.middlewares import tracing_middleware,RequestIdMiddleware,MetricsMiddleware
+from app.middlewares import tracing_middleware, RequestIdMiddleware, MetricsMiddleware
 from app.ratelimit import RateLimitMiddleware
 from app.metrics import router as metrics_router
 from app.services.answering import quality_judge
 import logging
+
+
+llm_provider = None
+
 
 class ContextIn(BaseModel):
     q: str = ""
@@ -98,22 +91,26 @@ def create_app() -> FastAPI:
 
 
 
-    embedder = build_embedder(settings.embedding_backend, settings.embedding_model)
-    vrepo = VectorStoreRepo(embedder=embedder)
-    grepo = GraphRepo()
-    erepo = EpisodicRepo(db_path=settings.sqlite_path)
+    memory = build_memory(use_llm=True, reject_conflicts=False)
 
-    
-    retriever = Retriever(vrepo, grepo, erepo)
-    consistency = SimpleConsistencyEngine()
-    orchestrator = Orchestrator(retriever, SimpleConsistencyEngine())
-    writeback_svc = WriteBackService(vrepo, grepo, erepo, MemoryPolicy())
-    prompt_renderer = PromptRenderer()
-    
-    attach_repos(vrepo, grepo, erepo, writeback_svc)
+    vrepo = memory.vector_repo
+    grepo = memory.graph_repo
+    erepo = memory.episodic_repo
+    retriever = memory.retriever
+    consistency = memory.consistency
+    orchestrator = memory.orchestrator
+    prompt_renderer = memory.prompt_renderer
+
+    class _WritebackAdapter:
+        def write(self, items: list[dict[str, Any]]):
+            return memory.write_items(items)
+
+    attach_repos(vrepo, grepo, erepo, _WritebackAdapter())
     app.include_router(admin_router)
     app.include_router(metrics_router, tags=["metrics"])
-    llm_provider = build_llm()  # может быть и None
+
+    global llm_provider
+    llm_provider = memory.llm  # может быть и None
 
 
     @app.get("/healthz")
@@ -137,7 +134,7 @@ def create_app() -> FastAPI:
 
     @app.post("/writeback", response_model=WriteReport)
     def writeback(objs: list[dict]):
-        rep = writeback_svc.write(objs)
+        rep = memory.write_items(objs)
         metrics.inc("writeback_saved", rep.saved)
         metrics.inc("writeback_rejected", rep.rejected)
         return rep

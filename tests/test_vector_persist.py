@@ -1,5 +1,5 @@
 from pathlib import Path
-from infra.vector_repo import VectorStoreRepo
+from infra.repo.vector_repo import VectorStoreRepo
 from domain.models import MemoryObject, Provenance
 
 def _obj(i, t): 

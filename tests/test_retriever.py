@@ -1,8 +1,8 @@
 # tests/test_retriever.py
 from domain.models import MemoryObject, Fact, Episode, EpisodeEvent, Provenance
-from infra.vector_repo import VectorStoreRepo
-from infra.graph_repo import GraphRepo
-from infra.episodic_repo import EpisodicRepo
+from infra.repo.vector_repo import VectorStoreRepo
+from infra.repo.graph_repo import GraphRepo
+from infra.repo.episodic_repo import EpisodicRepo
 from app.retriever import Retriever
 
 
