@@ -1,18 +1,56 @@
-# infra/llm_factory.py
 from __future__ import annotations
-from domain.llm import ILLMProvider
-from app.config import settings
 
-def build_llm() -> ILLMProvider | None:
-    prov = (settings.llm_provider or "none").lower()
-    if prov == "openai":
-        # ключ обязателен
-        if not settings.openai_api_key:
-            raise RuntimeError("OPENAI_API_KEY не задан")
-        from infra.llm.llm_openai import OpenAILLM
-        return OpenAILLM(model=settings.llm_model)
-    if prov == "ollama":
+from dataclasses import dataclass
+
+from app.config import settings
+from domain.llm import ILLMProvider
+
+
+@dataclass(frozen=True, slots=True)
+class LLMConfig:
+    provider: str = "none"
+    model: str | None = None
+    api_key: str | None = None
+    base_url: str | None = None
+    timeout: float = 120.0
+
+
+def build_llm(config: LLMConfig | None = None) -> ILLMProvider | None:
+    """Build an LLM provider from explicit config or environment settings.
+
+    This factory is the BYO-LLM boundary. Application code can skip it entirely
+    and pass its own ILLMProvider into OmniMemory/ModelBundle.
+    """
+    cfg = config or LLMConfig(
+        provider=settings.llm_provider,
+        model=settings.llm_model,
+        api_key=settings.openai_api_key,
+        base_url=settings.openai_base_url,
+    )
+
+    provider = (cfg.provider or "none").lower().replace("-", "_")
+
+    if provider in {"", "none", "off", "disabled"}:
+        return None
+
+    if provider in {"openai", "openai_compatible", "compatible"}:
+        if not cfg.model:
+            raise RuntimeError("LLM model is required")
+        from infra.llm.llm_openai_compatible import OpenAICompatibleLLM
+
+        return OpenAICompatibleLLM(
+            model=cfg.model,
+            api_key=cfg.api_key or "EMPTY",
+            base_url=cfg.base_url,
+            timeout=cfg.timeout,
+        )
+
+    if provider == "ollama":
         from infra.llm.llm_ollama import OllamaLLM
-        return OllamaLLM(model=settings.llm_ollama_model, base_url=settings.ollama_base_url)
-    # none
-    return None
+
+        return OllamaLLM(
+            model=cfg.model or settings.llm_ollama_model,
+            base_url=cfg.base_url or settings.ollama_base_url,
+        )
+
+    raise ValueError(f"Unsupported LLM provider: {cfg.provider}")

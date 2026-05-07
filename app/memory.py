@@ -6,13 +6,14 @@ from dataclasses import dataclass
 from typing import Any
 
 from .config import settings
-from .embeddings import build_embedder
+from infra.embeddings import build_embedder
 from .orchestrator import Orchestrator
 from .prompting import PromptRenderer
 from .retriever import Retriever
 
 from domain.distiller import IMemoryDistiller
 from domain.models import ContextPack, ConflictReport, RetrievalBundle, WriteReport
+from domain.model_ports import IEmbedder, ModelBundle
 from domain.policy import MemoryPolicy
 from domain.writeback import WritebackRequest, WritebackResult
 
@@ -121,12 +122,16 @@ class OmniMemory:
         episodic_repo: EpisodicRepo | None = None,
         reject_conflicts: bool = False,
         llm: Any | None = None,
+        embedder: IEmbedder | None = None,
+        model_bundle: ModelBundle | None = None,
     ) -> None:
-        embedder = None
-        if vector_repo is None:
-            embedder = build_embedder(settings.embedding_backend, settings.embedding_model)
+        bundle = model_bundle or ModelBundle()
 
-        self.vector_repo = vector_repo or VectorStoreRepo(embedder=embedder)
+        selected_embedder = embedder or bundle.embedder
+        if vector_repo is None and selected_embedder is None:
+            selected_embedder = build_embedder(settings.embedding_backend, settings.embedding_model)
+
+        self.vector_repo = vector_repo or VectorStoreRepo(embedder=selected_embedder)
         self.graph_repo = graph_repo or GraphRepo()
         self.episodic_repo = episodic_repo or EpisodicRepo(db_path=settings.sqlite_path)
 
@@ -144,9 +149,10 @@ class OmniMemory:
             reject_conflicts=reject_conflicts,
         )
 
-        self.distiller = distiller
+        self.distiller = distiller or bundle.distiller
+        self.reranker = bundle.reranker
         self.prompt_renderer = PromptRenderer()
-        self.llm = llm if llm is not None else (build_llm() if use_llm else None)
+        self.llm = llm if llm is not None else (bundle.llm or (build_llm() if use_llm else None))
 
     def write_items(
         self,

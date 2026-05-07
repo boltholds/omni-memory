@@ -10,6 +10,7 @@ import httpx
 import typer
 
 from app.builder import build_memory
+from infra.llm.llm_factory import LLMConfig, build_llm
 
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
@@ -166,12 +167,28 @@ def retrieve_cmd(
 def ask_cmd(
     question: str = typer.Argument(...),
     use_llm: bool = typer.Option(False, help="Use configured LLM provider locally."),
+    llm_provider: str | None = typer.Option(None, help="BYO-LLM provider: openai-compatible, openai, ollama, none."),
+    llm_base_url: str | None = typer.Option(None, help="BYO-LLM base URL, for example http://localhost:1234/v1."),
+    llm_model: str | None = typer.Option(None, help="BYO-LLM model name."),
+    llm_api_key: str | None = typer.Option(None, help="BYO-LLM API key; use local/EMPTY for local servers."),
     lang: str = typer.Option("en"),
     style: str = typer.Option("concise"),
     out_json: bool = typer.Option(False, "--json"),
 ):
     """Локально задать вопрос через OmniMemory."""
-    answer = build_memory(use_llm=use_llm, reject_conflicts=False).ask(
+    llm = None
+    if llm_provider:
+        llm = build_llm(
+            LLMConfig(
+                provider=llm_provider,
+                model=llm_model,
+                api_key=llm_api_key,
+                base_url=llm_base_url,
+            )
+        )
+        use_llm = False
+
+    answer = build_memory(use_llm=use_llm, llm=llm, reject_conflicts=False).ask(
         question,
         lang=lang,
         style=style,
