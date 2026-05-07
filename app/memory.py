@@ -15,7 +15,8 @@ from domain.distiller import IMemoryDistiller
 from domain.models import ContextPack, ConflictReport, RetrievalBundle, WriteReport
 from domain.model_ports import IEmbedder, ModelBundle
 from domain.policy import MemoryPolicy
-from domain.writeback import WritebackRequest, WritebackResult
+from domain.writeback import WritebackRequest, WritebackResult, WritebackRawItem
+from domain.repositories import IFactRepo
 
 from infra.consistency import SimpleConsistencyEngine
 from infra.llm.llm_factory import build_llm
@@ -55,7 +56,7 @@ class MemoryAnswer:
 def build_writeback_service(
     *,
     vector_repo: VectorStoreRepo,
-    graph_repo: GraphRepo,
+    graph_repo: IFactRepo,
     episodic_repo: EpisodicRepo,
     reject_conflicts: bool = False,
 ) -> WriteBackService:
@@ -118,7 +119,7 @@ class OmniMemory:
         distiller: IMemoryDistiller | None = None,
         *,
         vector_repo: VectorStoreRepo | None = None,
-        graph_repo: GraphRepo | None = None,
+        graph_repo: IFactRepo | None = None,
         episodic_repo: EpisodicRepo | None = None,
         reject_conflicts: bool = False,
         llm: Any | None = None,
@@ -178,13 +179,11 @@ class OmniMemory:
         dry_run: bool = False,
         meta: dict[str, Any] | None = None,
     ) -> WritebackResult:
-        request = WritebackRequest.model_validate(
-            {
-                "source": source,
-                "dry_run": dry_run,
-                "meta": meta or {},
-                "items": items,
-            }
+        request = WritebackRequest(
+                source=source,
+                dry_run= dry_run,
+                meta= meta or {},
+                items=[WritebackRawItem.model_validate(item) for item in items],
         )
         return self.writeback_service.write(request)
 

@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from domain.llm import ILLMProvider
 from domain.model_ports import IEmbedder, ModelBundle
+from domain.repositories import IFactRepo
 from app.memory import OmniMemory
+
+from infra.repo.vector_repo import VectorStoreRepo
+from infra.repo.graph_repo import GraphRepo
+from infra.repo.episodic_repo import EpisodicRepo
 
 
 def build_memory(
@@ -12,11 +17,23 @@ def build_memory(
     llm: ILLMProvider | None = None,
     embedder: IEmbedder | None = None,
     model_bundle: ModelBundle | None = None,
+    vector_repo: VectorStoreRepo | None = None,
+    graph_repo: IFactRepo | None = None,
+    episodic_repo: EpisodicRepo | None = None,
 ) -> OmniMemory:
     """Build the central OmniMemory facade used by CLI, FastAPI and examples.
 
-    For BYO-LLM pass llm=... .
-    For BYOM pass model_bundle=ModelBundle(llm=..., embedder=..., reranker=..., distiller=...).
+    BYO-LLM:
+        build_memory(llm=my_llm)
+
+    BYO-Embedder:
+        build_memory(embedder=my_embedder)
+
+    Full BYOM:
+        build_memory(model_bundle=ModelBundle(...))
+
+    Advanced/tests/CLI:
+        build_memory(vector_repo=..., graph_repo=..., episodic_repo=...)
     """
     return OmniMemory(
         use_llm=use_llm,
@@ -24,4 +41,7 @@ def build_memory(
         llm=llm,
         embedder=embedder,
         model_bundle=model_bundle,
+        vector_repo=vector_repo,
+        graph_repo=graph_repo,
+        episodic_repo=episodic_repo,
     )
