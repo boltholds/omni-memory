@@ -5,7 +5,43 @@ from typing import Dict, List, Optional
 import numpy as np
 import json
 from pathlib import Path
-import faiss  # type: ignore
+try:
+    import faiss  # type: ignore
+except ModuleNotFoundError:  # pragma: no cover - lightweight test/dev fallback
+    class _IndexFlatIP:
+        def __init__(self, dim: int) -> None:
+            self.dim = dim
+            self._vectors = np.empty((0, dim), dtype="float32")
+
+        def add(self, vectors) -> None:
+            arr = np.asarray(vectors, dtype="float32")
+            if arr.ndim != 2 or arr.shape[1] != self.dim:
+                raise ValueError(f"Expected vectors with shape (*, {self.dim})")
+            self._vectors = np.vstack([self._vectors, arr])
+
+        def search(self, query, k: int):
+            q = np.asarray(query, dtype="float32")
+            if self._vectors.shape[0] == 0:
+                distances = np.empty((q.shape[0], 0), dtype="float32")
+                indices = np.empty((q.shape[0], 0), dtype="int64")
+                return distances, indices
+            scores = q @ self._vectors.T
+            order = np.argsort(-scores, axis=1)[:, :k]
+            distances = np.take_along_axis(scores, order, axis=1).astype("float32")
+            return distances, order.astype("int64")
+
+    class _FaissFallback:
+        IndexFlatIP = _IndexFlatIP
+
+        @staticmethod
+        def write_index(index, path: str) -> None:
+            raise RuntimeError("faiss is not installed; vector index persistence is unavailable")
+
+        @staticmethod
+        def read_index(path: str):
+            raise RuntimeError("faiss is not installed; vector index persistence is unavailable")
+
+    faiss = _FaissFallback()  # type: ignore
 import hashlib
 import re
 import time

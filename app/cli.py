@@ -122,6 +122,72 @@ def load_episodes(path: Path = typer.Argument(..., exists=True, readable=True)):
     _print_report("episodes", rep)
 
 
+
+
+@app.command("write-note")
+def write_note(
+    text: str = typer.Argument(...),
+    source: str = typer.Option("cli"),
+):
+    """Локально сохранить заметку через центральный OmniMemory facade."""
+    rep = _svc().write_note(text, source=source)
+    _print_report("note", rep)
+
+
+@app.command("retrieve")
+def retrieve_cmd(
+    query: str = typer.Argument(...),
+    k_sem: int = typer.Option(5),
+    k_eps: int = typer.Option(3),
+    out_json: bool = typer.Option(False, "--json"),
+):
+    """Локально получить memory context для CLI/MCP/LangGraph сценариев."""
+    bundle = _svc().retrieve(query, k_sem=k_sem, k_eps=k_eps)
+
+    if out_json:
+        typer.echo(json.dumps(bundle.model_dump(), ensure_ascii=False, indent=2))
+        return
+
+    typer.echo("facts:")
+    for fact in bundle.facts:
+        typer.echo(f"  - {fact.subject} {fact.predicate} {fact.object}")
+
+    typer.echo("episodes:")
+    for episode in bundle.episodes:
+        typer.echo(f"  - {episode.summary}")
+
+    typer.echo("semantic_chunks:")
+    for chunk in bundle.semantic_chunks:
+        text = chunk.payload.get("text") or chunk.payload.get("raw") or ""
+        typer.echo(f"  - {text}")
+
+
+@app.command("ask")
+def ask_cmd(
+    question: str = typer.Argument(...),
+    use_llm: bool = typer.Option(False, help="Use configured LLM provider locally."),
+    lang: str = typer.Option("en"),
+    style: str = typer.Option("concise"),
+    out_json: bool = typer.Option(False, "--json"),
+):
+    """Локально задать вопрос через OmniMemory."""
+    answer = build_memory(use_llm=use_llm, reject_conflicts=False).ask(
+        question,
+        lang=lang,
+        style=style,
+    )
+
+    if out_json:
+        typer.echo(json.dumps(answer.__dict__, ensure_ascii=False, indent=2))
+        return
+
+    typer.echo(answer.answer)
+    if answer.advisories:
+        typer.echo("\nadvisories:")
+        for advisory in answer.advisories:
+            typer.echo(f"  - {advisory}")
+
+
 @app.command("export")
 def export_cmd(
     out: Path = typer.Argument(..., writable=True),
