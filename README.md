@@ -9,6 +9,8 @@ poetry install
 poetry run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
+Optional SQL persistence for memory audit/governance is documented in `docs/memory_persistence.md`.
+
 ## Why OmniMemory is not just RAG
 
 Classic RAG usually follows this flow:
