@@ -30,7 +30,7 @@ class OllamaLLM(ILLMProvider):
         t0 = time.perf_counter()
 
         try:
-            with httpx.Client(timeout=120.0) as client:
+            with httpx.Client(timeout=httpx.Timeout(30.0, connect=2.0)) as client:
                 r = client.post(url, json=payload)
                 dur = int((time.perf_counter() - t0) * 1000)
                 r.raise_for_status()

@@ -2,15 +2,15 @@
   {
     "id": "f1",
     "subject": "alice",
-    "predicate": "location",
+    "predicate": "at",
     "object": "lighthouse",
     "provenance": {
       "source": "user",
-      "time": 1778178938.614454,
+      "time": 1782906260.2441564,
       "meta": {}
     },
     "meta": {
-      "expire_at": 1809714938.614454
+      "expire_at": 1814442260.2441564
     }
   }
 ]

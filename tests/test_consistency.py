@@ -1,6 +1,6 @@
 # tests/test_consistency.py
 from domain.models import Fact, Provenance
-from infra.consistency import SimpleConsistencyEngine, score_trust_recent_first
+from infra.consistency import SimpleConsistencyEngine, build_fact_beliefs, score_trust_recent_first
 
 
 def F(fid: str, s: str, p: str, o: str, t: float = 0.0, src: str = "user") -> Fact:
@@ -48,3 +48,47 @@ def test_score_trust_recent_first_heuristic():
     assert "x1" in scores and "x2" in scores
     # verified + новее должен иметь больший скор
     assert scores["x2"] > scores["x1"]
+
+
+def test_build_fact_beliefs_selects_current_and_keeps_history():
+    facts = [
+        F("old", "Alice", "at", "lighthouse", t=10.0, src="user"),
+        F("new", "alice", "at", "bridge", t=20.0, src="verified"),
+    ]
+
+    beliefs = build_fact_beliefs(facts, as_of=30.0)
+
+    assert len(beliefs) == 1
+    belief = beliefs[0]
+    assert belief.key == "alice::at"
+    assert belief.current is not None
+    assert belief.current.id == "new"
+    assert belief.status == "conflict"
+    assert [f.id for f in belief.alternatives] == ["old"]
+
+
+def test_build_fact_beliefs_ignores_expired_fact_for_current():
+    facts = [
+        Fact(
+            id="expired",
+            subject="alice",
+            predicate="at",
+            object="lighthouse",
+            provenance=Provenance(source="verified", time=100.0),
+            meta={"valid_to": 150.0},
+        ),
+        Fact(
+            id="active",
+            subject="alice",
+            predicate="at",
+            object="bridge",
+            provenance=Provenance(source="user", time=10.0),
+            meta={},
+        ),
+    ]
+
+    beliefs = build_fact_beliefs(facts, as_of=200.0)
+
+    assert beliefs[0].current is not None
+    assert beliefs[0].current.id == "active"
+    assert [f.id for f in beliefs[0].historical] == ["expired"]

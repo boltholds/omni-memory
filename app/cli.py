@@ -12,13 +12,33 @@ import typer
 from app.builder import build_memory
 from infra.llm.llm_factory import LLMConfig, build_llm
 from infra.embeddings.factory import build_embedder
+from infra.embeddings.factory import build_embedder
+
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
 DEFAULT_URL = "http://127.0.0.1:8000"
 
 def _svc():
-    return _local_memory(use_llm=False)
+    return _local_memory(
+        use_llm=False,
+        embedding_provider="hash",
+        embedding_model="hash",
+    )
+
+
+
+def _safe_name(value: str | None) -> str:
+    if not value:
+        return "default"
+
+    return (
+        value.replace("/", "_")
+        .replace("\\", "_")
+        .replace(":", "_")
+        .replace(" ", "_")
+    )
+
 
 def _print_report(prefix: str, rep: Any) -> None:
     saved = getattr(rep, "saved", None)
@@ -135,21 +155,53 @@ def _local_memory(
     use_llm: bool = False,
     llm: Any | None = None,
     embedder: Any | None = None,
-    reject_conflicts=False,
+    embedding_provider: str = "hash",
+    embedding_model: str | None = None,
+    embedding_device: str | None = None,
+    reject_conflicts: bool = False,
 ):
     from app.embeddings import HashEmbedder
     from infra.repo.vector_repo import VectorStoreRepo
+    from infra.repo.persistent_vector_repo import PersistentVectorRepo
     from infra.repo.graph_repo import GraphRepo
     from infra.repo.persistent_fact_repo import PersistentFactRepo
 
     memory_dir = Path(".omni-memory")
     memory_dir.mkdir(parents=True, exist_ok=True)
 
-    selected_embedder = embedder or HashEmbedder()
+    if embedder is None:
+        if embedding_provider in {"hash", "auto"}:
+            selected_embedder = HashEmbedder()
+            normalized_provider = "hash"
+            normalized_model = "hash"
+        else:
+            selected_embedder = _build_cli_embedder(
+                embedding_provider=embedding_provider,
+                embedding_model=embedding_model,
+                embedding_device=embedding_device,
+            )
+            normalized_provider = embedding_provider
+            normalized_model = embedding_model or "default"
+    else:
+        selected_embedder = embedder
+        normalized_provider = embedding_provider
+        normalized_model = embedding_model or "custom"
 
     graph_repo = PersistentFactRepo(
         inner=GraphRepo(),
         path=memory_dir / "facts.json",
+    )
+
+    vector_dir = (
+        memory_dir
+        / "vector"
+        / _safe_name(normalized_provider)
+        / _safe_name(normalized_model)
+    )
+
+    vector_repo = PersistentVectorRepo(
+        inner=VectorStoreRepo(embedder=selected_embedder),
+        dir_path=vector_dir,
     )
 
     return build_memory(
@@ -157,12 +209,49 @@ def _local_memory(
         llm=llm,
         embedder=selected_embedder,
         reject_conflicts=reject_conflicts,
-        vector_repo=VectorStoreRepo(embedder=selected_embedder),
+        vector_repo=vector_repo,
         graph_repo=graph_repo,
     )
 
 
+def _build_cli_embedder(
+    *,
+    embedding_provider: str = "hash",
+    embedding_model: str | None = None,
+    embedding_device: str | None = None,
+):
+    try:
+        if embedding_provider in {"hash", "auto"}:
+            return build_embedder(
+                backend="hash",
+                model_name=embedding_model,
+                device=embedding_device,
+            )
 
+        return build_embedder(
+            backend=embedding_provider,
+            model_name=embedding_model,
+            device=embedding_device,
+        )
+    except Exception as exc:
+        typer.secho(
+            f"Failed to initialize embedder provider={embedding_provider!r}.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+
+        if embedding_provider in {
+            "sentence-transformers",
+            "sentence_transformers",
+            "st",
+        }:
+            typer.echo(
+                "Install sentence-transformers or use --embedding-provider hash.",
+                err=True,
+            )
+
+        typer.echo(f"Original error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
 
 
 @app.command("load-facts")
@@ -174,10 +263,35 @@ def load_facts(path: Path = typer.Argument(..., exists=True, readable=True)):
 
 
 @app.command("load-notes")
-def load_notes(path: Path = typer.Argument(..., exists=True, readable=True)):
+def load_notes(
+    path: Path = typer.Argument(..., exists=True, readable=True),
+    embedding_provider: str = typer.Option(
+        "hash",
+        "--embedding-provider",
+        help="BYO-Embedder provider: hash, sentence-transformers.",
+    ),
+    embedding_model: str | None = typer.Option(
+        None,
+        "--embedding-model",
+        help="Embedding model name, for example sentence-transformers/all-MiniLM-L6-v2.",
+    ),
+    embedding_device: str | None = typer.Option(
+        None,
+        "--embedding-device",
+        help="Optional embedding device, for example cpu or cuda.",
+    ),
+):
     """Локально загрузить notes markdown через WriteBackService."""
     items = _parse_notes_md(path)
-    rep = _svc().write_items(items)
+
+    memory = _local_memory(
+        use_llm=False,
+        embedding_provider=embedding_provider,
+        embedding_model=embedding_model,
+        embedding_device=embedding_device,
+    )
+
+    rep = memory.write_items(items)
     _print_report("notes", rep)
 
 
@@ -204,29 +318,38 @@ def write_note(
 @app.command("retrieve")
 def retrieve_cmd(
     query: str = typer.Argument(...),
-    k_sem: int = typer.Option(5),
-    k_eps: int = typer.Option(3),
+    k: int = typer.Option(5, "--k"),
     out_json: bool = typer.Option(False, "--json"),
+    embedding_provider: str = typer.Option(
+        "hash",
+        "--embedding-provider",
+        help="BYO-Embedder provider: hash, sentence-transformers.",
+    ),
+    embedding_model: str | None = typer.Option(
+        None,
+        "--embedding-model",
+        help="Embedding model name, for example sentence-transformers/all-MiniLM-L6-v2.",
+    ),
+    embedding_device: str | None = typer.Option(
+        None,
+        "--embedding-device",
+        help="Optional embedding device, for example cpu or cuda.",
+    ),
 ):
-    """Локально получить memory context для CLI/MCP/LangGraph сценариев."""
-    bundle = _svc().retrieve(query, k_sem=k_sem, k_eps=k_eps)
+    memory = _local_memory(
+        use_llm=False,
+        embedding_provider=embedding_provider,
+        embedding_model=embedding_model,
+        embedding_device=embedding_device,
+    )
+
+    bundle = memory.retrieve(query, k_sem=k)
 
     if out_json:
-        typer.echo(json.dumps(bundle.model_dump(), ensure_ascii=False, indent=2))
+        typer.echo(json.dumps(bundle.model_dump(mode="json"), ensure_ascii=False, indent=2))
         return
 
-    typer.echo("facts:")
-    for fact in bundle.facts:
-        typer.echo(f"  - {fact.subject} {fact.predicate} {fact.object}")
-
-    typer.echo("episodes:")
-    for episode in bundle.episodes:
-        typer.echo(f"  - {episode.summary}")
-
-    typer.echo("semantic_chunks:")
-    for chunk in bundle.semantic_chunks:
-        text = chunk.payload.get("text") or chunk.payload.get("raw") or ""
-        typer.echo(f"  - {text}")
+    typer.echo(bundle)
 
 
 @app.command("ask")
@@ -286,10 +409,10 @@ def ask_cmd(
         use_llm = False
 
     try:
-        embedder = build_embedder(
-            backend=embedding_provider,
-            model_name=embedding_model,
-            device=embedding_device,
+        embedder = _build_cli_embedder(
+            embedding_provider=embedding_provider,
+            embedding_model=embedding_model,
+            embedding_device=embedding_device,
         )
     except Exception as exc:
         typer.secho(
@@ -308,11 +431,14 @@ def ask_cmd(
         raise typer.Exit(code=1) from exc
 
     try:
+
         answer = _local_memory(
             use_llm=use_llm,
             llm=llm,
             embedder=embedder,
-            reject_conflicts=False,
+            embedding_provider=embedding_provider,
+            embedding_model=embedding_model,
+            embedding_device=embedding_device,
         ).ask(
             question,
             lang=lang,
@@ -469,7 +595,23 @@ def llm_check_cmd(
     typer.echo(f"text: {result.get('text', '').strip()}")
 
 
+@app.command("memory-path")
+def memory_path_cmd(
+    embedding_provider: str = typer.Option("hash", "--embedding-provider"),
+    embedding_model: str | None = typer.Option(None, "--embedding-model"),
+):
+    provider = "hash" if embedding_provider in {"hash", "auto"} else embedding_provider
+    model = "hash" if provider == "hash" else embedding_model or "default"
 
+    vector_dir = (
+        Path(".omni-memory")
+        / "vector"
+        / _safe_name(provider)
+        / _safe_name(model)
+    )
+
+    typer.echo(f"facts:  {Path('.omni-memory') / 'facts.json'}")
+    typer.echo(f"vector: {vector_dir}")
 
 if __name__ == "__main__":
     app()

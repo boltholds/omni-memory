@@ -214,3 +214,6 @@ __marimo__/
 
 omni-memory.zip
 omni-memory.code-workspace
+.omni-memory/
+facts.json
+notes.md

@@ -9,6 +9,7 @@ from app.entities import build_entity_stack
 from app.config import settings
 from app.profiling import timed
 from app.stats import stats
+from infra.consistency import build_fact_beliefs
 
 def _simple_entities(query: str) -> List[str]:
     """
@@ -76,4 +77,12 @@ class Retriever(IRetriever):
         episodes: List[Episode] = self._episodic.search(user=None, entities=ents, k=k_eps)
         stop_ep()
         
-        return RetrievalBundle(semantic_chunks=semantic_chunks, facts=facts, episodes=episodes, citations=[])
+        beliefs = build_fact_beliefs(facts)
+
+        return RetrievalBundle(
+            semantic_chunks=semantic_chunks,
+            facts=facts,
+            beliefs=beliefs,
+            episodes=episodes,
+            citations=[],
+        )

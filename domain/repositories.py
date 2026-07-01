@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from domain.models import Fact
+from domain.models import Fact, MemoryObject
 
 
 class IFactRepo(Protocol):
@@ -21,4 +21,21 @@ class IFactRepo(Protocol):
         ...
 
     def find_conflicts(self):
+        ...
+        
+        
+ 
+
+
+class IVectorRepo(Protocol):
+    def save_object(self, obj: MemoryObject) -> bool:
+        ...
+
+    def semantic_search(self, text: str, k: int = 5) -> list[MemoryObject]:
+        ...
+
+    def is_duplicate_text(self, text: str) -> bool:
+        ...
+
+    def count(self) -> int:
         ...

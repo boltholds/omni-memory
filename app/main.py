@@ -26,6 +26,8 @@ class ContextIn(BaseModel):
     q: str = ""
     max_tokens: Optional[int] = None
     draft: Optional[bool] = False
+    lang: Literal["en","ru"] = "en"
+    style: Literal["concise", "bullets", "detailed", "plain"] = "concise"
 
 
 
@@ -221,8 +223,14 @@ def create_app() -> FastAPI:
         # 4) Генерация ответа LLM
         sections_as_text = [f"{s.title}:\n{s.body}" for s in pack.sections]
         msgs = prompt_renderer.make_messages(inp.q, sections_as_text, lang=inp.lang, style = "concise" if inp.style == "plain" else inp.style)
-        res = llm_provider.generate(msgs, temperature=inp.temperature or settings.llm_temperature)
-        answer_text = (res.get("text") or "").strip()
+        try:
+            res = llm_provider.generate(msgs, temperature=inp.temperature or settings.llm_temperature)
+            answer_text = (res.get("text") or "").strip()
+        except Exception as exc:
+            conflict_prefix = "Conflict detected. " if conflicts else ""
+            answer_text = conflict_prefix + "LLM provider failed; answer unknown from available context."
+            res = {"model": None}
+            pack.advisories.append(f"LLM provider failed: {type(exc).__name__}")
         
         # 5) Оценка качества ответа (галлюцинации/конфликты)        
         used_sections = [

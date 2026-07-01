@@ -2,11 +2,9 @@ from __future__ import annotations
 
 from domain.llm import ILLMProvider
 from domain.model_ports import IEmbedder, ModelBundle
-from domain.repositories import IFactRepo
+from domain.repositories import IFactRepo, IVectorRepo
 from app.memory import OmniMemory
 
-from infra.repo.vector_repo import VectorStoreRepo
-from infra.repo.graph_repo import GraphRepo
 from infra.repo.episodic_repo import EpisodicRepo
 
 
@@ -17,7 +15,7 @@ def build_memory(
     llm: ILLMProvider | None = None,
     embedder: IEmbedder | None = None,
     model_bundle: ModelBundle | None = None,
-    vector_repo: VectorStoreRepo | None = None,
+    vector_repo: IVectorRepo | None = None,
     graph_repo: IFactRepo | None = None,
     episodic_repo: EpisodicRepo | None = None,
 ) -> OmniMemory:
@@ -45,3 +43,6 @@ def build_memory(
         graph_repo=graph_repo,
         episodic_repo=episodic_repo,
     )
+    
+    
+

@@ -24,6 +24,19 @@ class Fact(BaseModel):
     meta: Dict[str, Any] = Field(default_factory=dict)
 
 
+class FactBelief(BaseModel):
+    key: str
+    subject: str
+    predicate: str
+    current: Optional[Fact] = None
+    alternatives: List[Fact] = Field(default_factory=list)
+    historical: List[Fact] = Field(default_factory=list)
+    variants: List[str] = Field(default_factory=list)
+    current_score: float = 0.0
+    status: str = "unknown"
+    reason: str = ""
+
+
 class Episode(BaseModel):
     id: str
     participants: List[str] = Field(default_factory=list)
@@ -42,6 +55,7 @@ class EpisodeEvent(BaseModel):
 class RetrievalBundle(BaseModel):
     semantic_chunks: List[MemoryObject] = Field(default_factory=list)
     facts: List[Fact] = Field(default_factory=list)
+    beliefs: List[FactBelief] = Field(default_factory=list)
     episodes: List[Episode] = Field(default_factory=list)
     citations: List[Dict[str, Any]] = Field(default_factory=list)
 

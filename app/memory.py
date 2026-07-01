@@ -11,11 +11,17 @@ from .orchestrator import Orchestrator
 from .prompting import PromptRenderer
 from .retriever import Retriever
 
-from domain.distiller import IMemoryDistiller
+from domain.distiller import IMemoryDistiller, SessionTurn
 from domain.models import ContextPack, ConflictReport, RetrievalBundle, WriteReport
 from domain.model_ports import IEmbedder, ModelBundle
 from domain.policy import MemoryPolicy
 from domain.writeback import WritebackRequest, WritebackResult, WritebackRawItem
+from app.session_distillation import (
+    ConservativeCandidateValidator,
+    accepted_candidates,
+    build_transcript,
+    candidates_to_writeback_items,
+)
 from domain.repositories import IFactRepo
 
 from infra.consistency import SimpleConsistencyEngine
@@ -151,6 +157,7 @@ class OmniMemory:
         )
 
         self.distiller = distiller or bundle.distiller
+        self._session_turns: list[SessionTurn] = []
         self.reranker = bundle.reranker
         self.prompt_renderer = PromptRenderer()
         self.llm = llm if llm is not None else (bundle.llm or (build_llm() if use_llm else None))
@@ -232,6 +239,65 @@ class OmniMemory:
             "meta": meta or {},
         }
         return self.write_items([item], source=source, meta=meta)
+
+    def ingest_turn(self, role: str, content: str) -> None:
+        self._session_turns.append(SessionTurn(role=role, content=content))
+
+    def clear_session(self) -> None:
+        self._session_turns.clear()
+
+    def commit_session(
+        self,
+        *,
+        source: str = "session",
+        dry_run: bool = False,
+        meta: dict[str, Any] | None = None,
+        min_confidence: float = 0.75,
+        clear: bool = True,
+    ) -> WritebackResult:
+        """Distill the accumulated dialogue session into durable memory.
+
+        This is intentionally conservative: the distiller proposes candidates,
+        then the validator filters them before regular writeback policies run.
+        """
+
+        if not self._session_turns:
+            return WritebackResult()
+
+        if self.distiller is None or not hasattr(self.distiller, "distill_session"):
+            raise RuntimeError("Session distiller is not configured. Pass a distiller with distill_session().")
+
+        turns = list(self._session_turns)
+        transcript = build_transcript(turns)
+        distillation = self.distiller.distill_session(turns)
+        candidates, rejected = accepted_candidates(
+            distillation,
+            transcript=transcript,
+            validator=ConservativeCandidateValidator(min_confidence=min_confidence),
+        )
+        raw_items = candidates_to_writeback_items(
+            candidates,
+            source=source,
+            meta=meta or {"session_rejected": rejected},
+        )
+        result = self.writeback_service.write(
+            WritebackRequest(
+                source=source,
+                dry_run=dry_run,
+                meta=meta or {},
+                items=raw_items,
+            )
+        )
+
+        for reason in rejected:
+            from domain.writeback import WritebackDecision
+
+            result.add_rejected(WritebackDecision.reject(reason=reason, policy="SessionDistillation"))
+
+        if clear and not dry_run:
+            self.clear_session()
+
+        return result
 
     def retrieve(self, query: str, *, k_sem: int = 5, k_eps: int = 3) -> RetrievalBundle:
         return self.retriever.retrieve(query, k_sem=k_sem, k_eps=k_eps)
