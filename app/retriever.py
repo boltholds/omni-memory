@@ -51,6 +51,30 @@ def _entity_variants(entity: str) -> list[str]:
     return out
 
 
+def _compound_entities(entities: list[str], *, max_n: int = 3) -> list[str]:
+    """Add simple adjacent n-grams for graph keys such as memory_project."""
+
+    out: list[str] = []
+    seen: set[str] = set()
+
+    def add(value: str) -> None:
+        if value and value not in seen:
+            seen.add(value)
+            out.append(value)
+
+    for entity in entities:
+        add(entity)
+
+    for n in range(2, max_n + 1):
+        if len(entities) < n:
+            continue
+        for i in range(0, len(entities) - n + 1):
+            window = entities[i : i + n]
+            add("_".join(window))
+
+    return out
+
+
 def _add_fact(fact: Fact, facts: list[Fact], seen_ids: set[str]) -> bool:
     if fact.id in seen_ids:
         return False
@@ -123,7 +147,8 @@ class Retriever(IRetriever):
     @timed("retriever.retrieve", slow_ms=100)
     def retrieve(self, query: str, k_sem: int = 5, k_eps: int = 3) -> RetrievalBundle:
         raw_ents = self._extractor.extract(query)
-        ents = self._linker.link_all(raw_ents)
+        linked_ents = self._linker.link_all(raw_ents)
+        ents = _compound_entities(linked_ents)
 
         # I Семантические чанки
         stop_vec = stats.timeit("retriever.vec_ms")
