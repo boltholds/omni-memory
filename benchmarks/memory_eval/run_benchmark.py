@@ -202,6 +202,8 @@ def run_case(case: dict[str, Any], llm, args: argparse.Namespace) -> dict[str, A
         "rejected": write_result.rejected_count,
         "errors": write_result.error_count,
         "reasons": write_result.reasons,
+        "policy_decisions_count": len(write_result.policy_decisions),
+        "operations_count": len(write_result.operations),
     }
 
     scores = {
@@ -230,6 +232,8 @@ def run_case(case: dict[str, Any], llm, args: argparse.Namespace) -> dict[str, A
             "overhead": round(memory_latency_ms - no_memory_latency_ms, 3),
         },
         "writeback": write_summary,
+        "policy_decisions": [item.model_dump(mode="json") for item in write_result.policy_decisions],
+        "memory_operations": [item.model_dump(mode="json") for item in write_result.operations],
         "context": context_dump,
         "advisories": memory_answer.advisories,
         "scores": scores,
