@@ -11,6 +11,7 @@ from domain.writeback import (
     MemoryWritePolicy,
     DomainMemoryObject,
     WritebackContext,
+    get_item_id,
     get_memory_kind,
 )
 
@@ -94,8 +95,8 @@ class MemoryRepositoryRouter:
         )
 
 
-def _raw_item_id(item: WritebackRawItem) -> str | None:
-    return item.id or item.uuid or item.hash
+def _raw_item_id(item: WritebackRawItem) -> str:
+    return get_item_id(item, prefix="item")
 
 
 def _dump_memory_object(memory_object: DomainMemoryObject | None) -> dict[str, Any] | None:
@@ -105,6 +106,30 @@ def _dump_memory_object(memory_object: DomainMemoryObject | None) -> dict[str, A
         return memory_object.model_dump(mode="json")
     except Exception:
         return {"repr": repr(memory_object)}
+
+
+def _apply_request_source_if_implicit(
+    memory_object: DomainMemoryObject,
+    *,
+    item: WritebackRawItem,
+    request_source: str | None,
+) -> DomainMemoryObject:
+    """Use batch/request source when the raw item did not provide provenance.
+
+    Domain models default Provenance.source to "user". Without this normalization,
+    API calls with source="demo" still end up with provenance.source="user" even
+    though the caller supplied a more precise batch source.
+    """
+
+    if item.provenance is not None or not request_source:
+        return memory_object
+
+    provenance = getattr(memory_object, "provenance", None)
+    if provenance is None:
+        return memory_object
+
+    updated_provenance = provenance.model_copy(update={"source": request_source})
+    return memory_object.model_copy(update={"provenance": updated_provenance})
 
 
 def _policy_decision_from_writeback(
@@ -206,6 +231,11 @@ class WriteBackService:
             try:
                 conversion_policy = self._resolver.resolve(item)
                 memory_object = conversion_policy.convert(item)
+                memory_object = _apply_request_source_if_implicit(
+                    memory_object,
+                    item=item,
+                    request_source=request.source,
+                )
                 operation = operation.model_copy(
                     update={
                         "memory_id": getattr(memory_object, "id", None),
