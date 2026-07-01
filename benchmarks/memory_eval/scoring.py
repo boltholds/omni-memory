@@ -32,7 +32,18 @@ def context_rule_score(case: dict[str, Any], context_dump: Any) -> dict[str, Any
 
     By default it reuses expected_answer_contains. A case can override this with
     expected_context_contains when the answer wording and context evidence differ.
+
+    Privacy-only cases should not be counted as context failures: in those cases
+    the desired behavior is often that no sensitive evidence reaches context.
     """
+
+    if case.get("skip_context_score") is True or case.get("category") == "pii":
+        return {
+            "score": None,
+            "correct": None,
+            "missing": [],
+            "details": "context_score_not_applicable",
+        }
 
     required_raw = case.get("expected_context_contains")
     if required_raw is None:
@@ -176,6 +187,9 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
     def avg(values: list[float]) -> float:
         return sum(values) / len(values) if values else 0.0
 
+    def avg_optional(values: list[float]) -> float | None:
+        return round(sum(values) / len(values), 4) if values else None
+
     def context_values(rows: list[dict[str, Any]]) -> list[float]:
         values: list[float] = []
         for row in rows:
@@ -187,24 +201,24 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
 
     overall_no_memory = avg([float(r["scores"]["no_memory"]["score"]) for r in results])
     overall_memory = avg([float(r["scores"]["memory"]["score"]) for r in results])
-    overall_context = avg(context_values(results))
+    overall_context = avg_optional(context_values(results))
 
     categories = {}
     for category, rows in sorted(by_category.items()):
         no_memory = avg([float(r["scores"]["no_memory"]["score"]) for r in rows])
         memory = avg([float(r["scores"]["memory"]["score"]) for r in rows])
-        context = avg(context_values(rows))
         categories[category] = {
             "cases": len(rows),
             "no_memory_score": round(no_memory, 4),
             "memory_score": round(memory, 4),
-            "context_score": round(context, 4),
+            "context_score": avg_optional(context_values(rows)),
             "memory_lift": round(memory - no_memory, 4),
         }
 
     privacy_violations = 0
     write_failures = 0
     context_failures = 0
+    answer_failures_with_context_ok = 0
     for row in results:
         memory_scores = row["scores"]["memory"]
         privacy = memory_scores.get("privacy") or {}
@@ -214,17 +228,21 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         if write.get("correct") is False:
             write_failures += 1
         context = memory_scores.get("context") or {}
+        answer = memory_scores.get("answer") or {}
         if context.get("correct") is False:
             context_failures += 1
+        if context.get("correct") is True and answer.get("correct") is False:
+            answer_failures_with_context_ok += 1
 
     return {
         "cases": len(results),
         "no_memory_score": round(overall_no_memory, 4),
         "memory_score": round(overall_memory, 4),
-        "context_score": round(overall_context, 4),
+        "context_score": overall_context,
         "memory_lift": round(overall_memory - overall_no_memory, 4),
         "privacy_violations": privacy_violations,
         "write_failures": write_failures,
         "context_failures": context_failures,
+        "answer_failures_with_context_ok": answer_failures_with_context_ok,
         "categories": categories,
     }
