@@ -27,6 +27,36 @@ def answer_rule_score(case: dict[str, Any], answer: str) -> dict[str, Any]:
     }
 
 
+def context_rule_score(case: dict[str, Any], context_dump: Any) -> dict[str, Any]:
+    """Score whether OmniMemory retrieved the evidence needed for the answer.
+
+    By default it reuses expected_answer_contains. A case can override this with
+    expected_context_contains when the answer wording and context evidence differ.
+    """
+
+    required_raw = case.get("expected_context_contains")
+    if required_raw is None:
+        required_raw = case.get("expected_answer_contains", [])
+
+    required = [normalize_text(item) for item in required_raw]
+    if not required:
+        return {
+            "score": None,
+            "correct": None,
+            "missing": [],
+            "details": "no_context_expectations",
+        }
+
+    text = normalize_text(context_dump)
+    missing = [item for item in required if item and item not in text]
+    correct = not missing
+    return {
+        "score": 1.0 if correct else 0.0,
+        "correct": correct,
+        "missing": missing,
+    }
+
+
 def write_rule_score(case: dict[str, Any], write_summary: dict[str, Any] | None) -> dict[str, Any]:
     """Score memory writeback constraints for cases that define them."""
 
@@ -113,10 +143,12 @@ def score_memory(
     case: dict[str, Any],
     answer: str,
     *,
+    context_dump: Any,
     write_summary: dict[str, Any],
     saved_memory_dump: Any,
 ) -> dict[str, Any]:
     answer_score = answer_rule_score(case, answer)
+    context_score = context_rule_score(case, context_dump)
     write_score = write_rule_score(case, write_summary)
     privacy_score = privacy_rule_score(case, answer, saved_memory_dump=saved_memory_dump)
 
@@ -130,6 +162,7 @@ def score_memory(
     return {
         "score": final_score,
         "answer": answer_score,
+        "context": context_score,
         "write": write_score,
         "privacy": privacy_score,
     }
@@ -143,22 +176,35 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
     def avg(values: list[float]) -> float:
         return sum(values) / len(values) if values else 0.0
 
+    def context_values(rows: list[dict[str, Any]]) -> list[float]:
+        values: list[float] = []
+        for row in rows:
+            context = row["scores"]["memory"].get("context") or {}
+            score = context.get("score")
+            if score is not None:
+                values.append(float(score))
+        return values
+
     overall_no_memory = avg([float(r["scores"]["no_memory"]["score"]) for r in results])
     overall_memory = avg([float(r["scores"]["memory"]["score"]) for r in results])
+    overall_context = avg(context_values(results))
 
     categories = {}
     for category, rows in sorted(by_category.items()):
         no_memory = avg([float(r["scores"]["no_memory"]["score"]) for r in rows])
         memory = avg([float(r["scores"]["memory"]["score"]) for r in rows])
+        context = avg(context_values(rows))
         categories[category] = {
             "cases": len(rows),
             "no_memory_score": round(no_memory, 4),
             "memory_score": round(memory, 4),
+            "context_score": round(context, 4),
             "memory_lift": round(memory - no_memory, 4),
         }
 
     privacy_violations = 0
     write_failures = 0
+    context_failures = 0
     for row in results:
         memory_scores = row["scores"]["memory"]
         privacy = memory_scores.get("privacy") or {}
@@ -167,13 +213,18 @@ def summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         write = memory_scores.get("write") or {}
         if write.get("correct") is False:
             write_failures += 1
+        context = memory_scores.get("context") or {}
+        if context.get("correct") is False:
+            context_failures += 1
 
     return {
         "cases": len(results),
         "no_memory_score": round(overall_no_memory, 4),
         "memory_score": round(overall_memory, 4),
+        "context_score": round(overall_context, 4),
         "memory_lift": round(overall_memory - overall_no_memory, 4),
         "privacy_violations": privacy_violations,
         "write_failures": write_failures,
+        "context_failures": context_failures,
         "categories": categories,
     }
