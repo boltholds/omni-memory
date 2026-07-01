@@ -6,6 +6,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from app.config import settings
+from infra.db.audit_repo import build_audit_repository
 from infra.metrics import metrics
 
 
@@ -35,6 +36,14 @@ class MemoryContextIn(BaseModel):
 
 def build_v1_router(memory, orchestrator) -> APIRouter:
     router = APIRouter(prefix="/v1", tags=["v1-memory"])
+    audit_repo = build_audit_repository()
+
+    def audit_status() -> dict[str, Any]:
+        return {
+            "enabled": audit_repo is not None,
+            "configured": bool(settings.memory_database_url),
+            "auto_create": settings.memory_audit_auto_create,
+        }
 
     def assemble_context_for_query(q: str, max_tokens: int | None = None):
         bundle = orchestrator.plan_retrieval(q)
@@ -61,10 +70,27 @@ def build_v1_router(memory, orchestrator) -> APIRouter:
             dry_run=inp.dry_run,
             meta=meta,
         )
+
+        persisted = False
+        persistence_error = None
+        if audit_repo is not None:
+            try:
+                audit_repo.save_writeback_result(result)
+                persisted = True
+            except Exception as exc:
+                persistence_error = f"{type(exc).__name__}: {exc}"
+
         metrics.inc("v1_memory_remember_calls", 1)
         metrics.inc("writeback_saved", result.saved_count)
         metrics.inc("writeback_rejected", result.rejected_count)
-        return result.model_dump(mode="json")
+
+        payload = result.model_dump(mode="json")
+        payload["audit_persistence"] = {
+            **audit_status(),
+            "persisted": persisted,
+            "error": persistence_error,
+        }
+        return payload
 
     @router.post("/memories/search")
     def search(inp: MemorySearchIn):
