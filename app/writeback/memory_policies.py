@@ -220,6 +220,7 @@ class ConfidencePolicy(MemoryWritePolicy):
 class DedupPolicy(MemoryWritePolicy):
     """
     Дедуплицирует текстовые MemoryObject внутри batch и против vector_repo.
+    Also rejects exact duplicate Fact objects already present in graph_repo.
 
     Ожидает, что vector_repo может иметь метод:
         is_duplicate_text(text: str) -> bool
@@ -234,6 +235,37 @@ class DedupPolicy(MemoryWritePolicy):
         memory_object: DomainMemoryObject,
         context: WritebackContext,
     ) -> WritebackDecision:
+        if isinstance(memory_object, Fact):
+            graph_repo = context.graph_repo
+            if graph_repo is not None and hasattr(graph_repo, "query"):
+                existing_facts = graph_repo.query(
+                    subject=memory_object.subject,
+                    predicate=memory_object.predicate,
+                )
+                duplicates = [
+                    fact
+                    for fact in existing_facts
+                    if fact.object == memory_object.object
+                ]
+                if duplicates:
+                    return WritebackDecision.reject(
+                        memory_object=memory_object,
+                        reason="duplicate_fact",
+                        policy=self.name,
+                        meta={
+                            "duplicates": [
+                                {
+                                    "id": fact.id,
+                                    "subject": fact.subject,
+                                    "predicate": fact.predicate,
+                                    "object": fact.object,
+                                }
+                                for fact in duplicates
+                            ]
+                        },
+                    )
+            return WritebackDecision.accept(memory_object, policy=self.name)
+
         if not isinstance(memory_object, MemoryObject):
             return WritebackDecision.accept(memory_object, policy=self.name)
 
