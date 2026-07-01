@@ -9,10 +9,14 @@ from app.config import settings
 from infra.metrics import metrics
 
 
+PolicyMode = Literal["permissive", "strict", "review"]
+
+
 class MemoryRememberIn(BaseModel):
     items: list[dict[str, Any]] = Field(default_factory=list)
     source: str = "api"
     dry_run: bool = False
+    policy_mode: PolicyMode = "permissive"
     meta: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -48,11 +52,14 @@ def build_v1_router(memory, orchestrator) -> APIRouter:
     @router.post("/memories/remember")
     def remember(inp: MemoryRememberIn):
         """Write memory items and return auditable writeback details."""
+        meta = dict(inp.meta or {})
+        meta["policy_mode"] = inp.policy_mode
+
         result = memory.write_items_raw(
             inp.items,
             source=inp.source,
             dry_run=inp.dry_run,
-            meta=inp.meta,
+            meta=meta,
         )
         metrics.inc("v1_memory_remember_calls", 1)
         metrics.inc("writeback_saved", result.saved_count)
