@@ -6,6 +6,7 @@ from typing import List, Protocol, Tuple
 from app.config import settings
 from app.tokenizer import build_tokenizer
 from domain.models import ContextSection,ContextPack,RetrievalBundle
+from domain.ports import IConsistencyEngine
 
 _tok = build_tokenizer(settings.tokenizer_backend, settings.tokenizer_model)
 
@@ -45,6 +46,7 @@ def _section(title: str, items: List[str]) -> ContextSection:
 class ContextBuildState:
     bundle: RetrievalBundle
     budget: int
+    consistency: IConsistencyEngine | None = None
     sections: List[ContextSection] = field(default_factory=list)
     advisories: List[str] = field(default_factory=list)
 
@@ -73,6 +75,33 @@ class BudgetedSectionStrategy:
         if trimmed:
             state.advisories.append(f"{self.title} trimmed to fit context budget.")
 
+        return state
+
+
+class ConflictsStrategy(BudgetedSectionStrategy):
+    title = "Conflicts"
+
+    def lines(self, bundle: RetrievalBundle) -> List[str]:
+        raise RuntimeError("ConflictsStrategy requires ContextBuildState.consistency")
+
+    def handle(self, state: ContextBuildState) -> ContextBuildState:
+        if state.consistency is None:
+            return state
+
+        report = state.consistency.detect_conflicts(state.bundle.facts)
+        if not report.conflicts:
+            return state
+
+        lines = [f"{c.key}: {', '.join(c.variants)}" for c in report.conflicts]
+        take, trimmed = _take_lines_up_to_budget(lines, state.budget)
+        state.sections.append(_section(self.title, take))
+        used = _tok_count("\n".join(take))
+        state.budget = max(0, state.budget - used)
+
+        if trimmed:
+            state.advisories.append("Conflicts trimmed to fit context budget.")
+
+        state.advisories.append(f"Detected {len(report.conflicts)} conflict(s).")
         return state
 
 
@@ -130,6 +159,7 @@ class EmptyContextAdvisoryStrategy:
 
 def _context_strategy_chain() -> List[ContextBuildStrategy]:
     return [
+        ConflictsStrategy(),
         CurrentBeliefsStrategy(),
         FactsStrategy(),
         EpisodesStrategy(),
@@ -138,12 +168,16 @@ def _context_strategy_chain() -> List[ContextBuildStrategy]:
     ]
 
 
-def build_context(bundle: RetrievalBundle, max_tokens: int) -> Tuple[ContextPack, List[str]]:
+def build_context(
+    bundle: RetrievalBundle,
+    max_tokens: int,
+    consistency: IConsistencyEngine | None = None,
+) -> Tuple[ContextPack, List[str]]:
     """
     Собираем секции в порядке приоритета с учётом бюджета.
     Возвращает ContextPack и список advisories.
     """
-    state = ContextBuildState(bundle=bundle, budget=max_tokens)
+    state = ContextBuildState(bundle=bundle, budget=max_tokens, consistency=consistency)
 
     for strategy in _context_strategy_chain():
         state = strategy.handle(state)
