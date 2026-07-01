@@ -1,13 +1,137 @@
 # omni-memory MVP
 
-LLM agents forget, duplicate facts, and hallucinate over outdated memory. Omni Memory gives agents structured long-term memory with conflict detection, write-back, and explainable context.
+LLM agents forget, duplicate facts, and hallucinate over outdated memory. Omni Memory gives agents structured long-term memory with conflict detection, write-back policies, current-belief resolution, and explainable context.
 
 ## Start
 
 ```bash
-
 poetry install
-
-
 poetry run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
+
+## Why OmniMemory is not just RAG
+
+Classic RAG usually follows this flow:
+
+```text
+question -> vector search over documents -> top-k chunks -> LLM answer
+```
+
+OmniMemory is a memory layer for agents. It has both a write path and a read path:
+
+```text
+interaction/event -> writeback policies -> typed memories -> storage
+question -> semantic + graph + episodic retrieval -> current beliefs/conflicts -> structured context -> LLM answer
+```
+
+The important differences are:
+
+- **Writeback before retrieval.** New information is not blindly embedded. It passes conversion and write policies first.
+- **Typed memory.** Facts, semantic notes, preferences and episodes can be stored and retrieved differently.
+- **Policy-first lifecycle.** Provenance, TTL, PII blocking, conflict checks, confidence checks and deduplication run before persistence.
+- **Current beliefs.** Multiple historical facts can exist, while the context builder can expose the current best belief and preserve alternatives.
+- **Conflict visibility.** Conflicting facts are surfaced instead of being left as unrelated chunks.
+- **Multi-hop graph retrieval.** Graph facts can be expanded beyond directly mentioned entities.
+- **Inspectable context.** The API can return both the final context and the retrieval bundle used to build it.
+
+This makes OmniMemory closer to a transparent long-term memory subsystem than to a document search layer.
+
+## v1 API
+
+### Remember memory
+
+```bash
+curl -X POST http://127.0.0.1:8000/v1/memories/remember \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source": "demo",
+    "items": [
+      {
+        "type": "fact",
+        "subject": "project",
+        "predicate": "backend_framework",
+        "object": "FastAPI",
+        "meta": {"confidence": 1.0}
+      }
+    ]
+  }'
+```
+
+The response includes saved/rejected/error items, plus `policy_decisions` and `operations` for inspection.
+
+### Search memory
+
+```bash
+curl -X POST http://127.0.0.1:8000/v1/memories/search \
+  -H "Content-Type: application/json" \
+  -d '{"q": "What backend framework does project use?"}'
+```
+
+This returns the raw retrieval bundle: semantic chunks, facts, current beliefs, episodes and citations.
+
+### Build context
+
+```bash
+curl -X POST http://127.0.0.1:8000/v1/context \
+  -H "Content-Type: application/json" \
+  -d '{"q": "What backend framework does project use?", "max_tokens": 1200}'
+```
+
+This returns the structured context pack and the retrieval bundle used to build it.
+
+## How to inspect why a memory was written
+
+`/v1/memories/remember` returns an audit trail for each writeback operation.
+
+Look at `policy_decisions` to answer:
+
+```text
+Which conversion policy matched?
+Which write policies accepted the memory?
+Which policy rejected it, if any?
+Was it skipped because of dry_run?
+Was it saved by the repository router?
+```
+
+A successful fact write should look conceptually like this:
+
+```json
+{
+  "policy_decisions": [
+    {"stage": "conversion", "policy": "fact_writeback", "action": "accept"},
+    {"stage": "write_policy", "policy": "provenance", "action": "accept"},
+    {"stage": "write_policy", "policy": "ttl", "action": "accept"},
+    {"stage": "write_policy", "policy": "pii", "action": "accept"},
+    {"stage": "write_policy", "policy": "conflict", "action": "accept"},
+    {"stage": "write_policy", "policy": "confidence", "action": "accept"},
+    {"stage": "repository", "policy": "repository_router", "action": "save"}
+  ]
+}
+```
+
+Look at `operations` to answer:
+
+```text
+What was the raw input?
+What memory object was produced?
+Was the operation saved, rejected, accepted as dry-run, or errored?
+What was the before/after diff envelope?
+```
+
+This is the beginning of product-level memory governance: every saved memory can explain why it exists.
+
+## Benchmark
+
+Run the memory-vs-no-memory benchmark:
+
+```bash
+poetry run python benchmarks/memory_eval/run_benchmark.py --provider openai-compatible --base-url http://localhost:11434/v1 --model gemma3:1b --temperature 0
+```
+
+Render a markdown report:
+
+```bash
+poetry run python benchmarks/memory_eval/report.py
+```
+
+The benchmark reports answer score, context score, write failures, privacy violations and answer failures where context was already correct.
