@@ -7,7 +7,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from infra.db.base import Base
-from infra.db import models  # noqa: F401 - ensure metadata is populated
+import infra.db.models  # noqa: F401 - ensure metadata is populated
 
 
 class DatabaseHandle:
