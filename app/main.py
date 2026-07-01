@@ -15,6 +15,7 @@ from app.logging import setup_logging
 from app.middlewares import tracing_middleware, RequestIdMiddleware, MetricsMiddleware
 from app.ratelimit import RateLimitMiddleware
 from app.metrics import router as metrics_router
+from app.api_v1 import build_v1_router
 from app.services.answering import quality_judge
 import logging
 
@@ -110,6 +111,7 @@ def create_app() -> FastAPI:
     attach_repos(vrepo, grepo, erepo, _WritebackAdapter())
     app.include_router(admin_router)
     app.include_router(metrics_router, tags=["metrics"])
+    app.include_router(build_v1_router(memory, orchestrator))
 
     global llm_provider
     llm_provider = memory.llm  # может быть и None
@@ -133,7 +135,6 @@ def create_app() -> FastAPI:
         out = retriever.retrieve(inp.q, inp.k_sem, inp.k_eps)
         metrics.inc("retrieve_calls", 1)
         return out
-
     @app.post("/writeback", response_model=WriteReport)
     def writeback(objs: list[dict]):
         rep = memory.write_items(objs)
@@ -176,7 +177,7 @@ def create_app() -> FastAPI:
             sections_as_text = [f"{s.title}:\n{s.body}" for s in pack.sections]
             msgs = prompt_renderer.make_messages(inp.q, sections_as_text, lang=inp.lang, style=inp.style)
             res = llm_provider.generate(msgs, temperature=settings.llm_temperature)
-            pack.advisories = list(dict.fromkeys(pack.advisories + [f"DRAFT: {res.get('text','').strip()}"]))
+            pack.advisories = list(dict.fromkeys(pack.advisories + [f"DRAFT: {res.get('text','').strip()}" ]))
         return pack
     
     @app.post("/answer", response_model=AnswerOut)
