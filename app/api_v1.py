@@ -1,0 +1,80 @@
+from __future__ import annotations
+
+from typing import Any, Literal
+
+from fastapi import APIRouter
+from pydantic import BaseModel, Field
+
+from app.config import settings
+from infra.metrics import metrics
+
+
+class MemoryRememberIn(BaseModel):
+    items: list[dict[str, Any]] = Field(default_factory=list)
+    source: str = "api"
+    dry_run: bool = False
+    meta: dict[str, Any] = Field(default_factory=dict)
+
+
+class MemorySearchIn(BaseModel):
+    q: str
+    k_sem: int = 5
+    k_eps: int = 3
+
+
+class MemoryContextIn(BaseModel):
+    q: str = ""
+    max_tokens: int | None = None
+    lang: Literal["en", "ru"] = "en"
+    style: Literal["concise", "bullets", "detailed", "plain"] = "concise"
+
+
+def build_v1_router(memory, orchestrator) -> APIRouter:
+    router = APIRouter(prefix="/v1", tags=["v1-memory"])
+
+    def assemble_context_for_query(q: str, max_tokens: int | None = None):
+        bundle = orchestrator.plan_retrieval(q)
+        if max_tokens:
+            old = settings.context_max_tokens
+            settings.context_max_tokens = int(max_tokens)
+            try:
+                pack = orchestrator.assemble_context(bundle)
+            finally:
+                settings.context_max_tokens = old
+        else:
+            pack = orchestrator.assemble_context(bundle)
+        return bundle, pack
+
+    @router.post("/memories/remember")
+    def remember(inp: MemoryRememberIn):
+        """Write memory items and return auditable writeback details."""
+        result = memory.write_items_raw(
+            inp.items,
+            source=inp.source,
+            dry_run=inp.dry_run,
+            meta=inp.meta,
+        )
+        metrics.inc("v1_memory_remember_calls", 1)
+        metrics.inc("writeback_saved", result.saved_count)
+        metrics.inc("writeback_rejected", result.rejected_count)
+        return result.model_dump(mode="json")
+
+    @router.post("/memories/search")
+    def search(inp: MemorySearchIn):
+        """Retrieve semantic chunks, graph facts, current beliefs and episodes."""
+        bundle = memory.retrieve(inp.q, k_sem=inp.k_sem, k_eps=inp.k_eps)
+        metrics.inc("v1_memory_search_calls", 1)
+        return bundle.model_dump(mode="json")
+
+    @router.post("/context")
+    def context(inp: MemoryContextIn):
+        """Return structured context plus the retrieval bundle used to build it."""
+        bundle, pack = assemble_context_for_query(inp.q, inp.max_tokens)
+        metrics.inc("v1_context_calls", 1)
+        return {
+            "query": inp.q,
+            "context": pack.model_dump(mode="json"),
+            "retrieval": bundle.model_dump(mode="json"),
+        }
+
+    return router
