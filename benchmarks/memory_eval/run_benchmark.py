@@ -196,6 +196,7 @@ def run_case(case: dict[str, Any], llm, args: argparse.Namespace) -> dict[str, A
     memory_latency_ms = (time.perf_counter() - started) * 1000.0
 
     saved_memory_dump = [item.model_dump(mode="json") for item in write_result.saved]
+    context_dump = memory_answer.context
     write_summary = {
         "saved": write_result.saved_count,
         "rejected": write_result.rejected_count,
@@ -208,6 +209,7 @@ def run_case(case: dict[str, Any], llm, args: argparse.Namespace) -> dict[str, A
         "memory": score_memory(
             case,
             memory_answer.answer,
+            context_dump=context_dump,
             write_summary=write_summary,
             saved_memory_dump=saved_memory_dump,
         ),
@@ -228,7 +230,7 @@ def run_case(case: dict[str, Any], llm, args: argparse.Namespace) -> dict[str, A
             "overhead": round(memory_latency_ms - no_memory_latency_ms, 3),
         },
         "writeback": write_summary,
-        "context": memory_answer.context,
+        "context": context_dump,
         "advisories": memory_answer.advisories,
         "scores": scores,
     }
