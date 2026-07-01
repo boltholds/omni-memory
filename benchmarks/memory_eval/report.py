@@ -18,6 +18,12 @@ def load_results(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
+def _fmt_score(value: Any) -> str:
+    if value is None:
+        return "n/a"
+    return f"{float(value):.4f}"
+
+
 def render_markdown(summary: dict[str, Any]) -> str:
     lines = [
         "# OmniMemory benchmark report",
@@ -25,11 +31,12 @@ def render_markdown(summary: dict[str, Any]) -> str:
         f"Cases: {summary['cases']}",
         f"No-memory score: {summary['no_memory_score']:.4f}",
         f"Memory score: {summary['memory_score']:.4f}",
-        f"Context score: {summary['context_score']:.4f}",
+        f"Context score: {_fmt_score(summary['context_score'])}",
         f"Memory lift: {summary['memory_lift']:.4f}",
         f"Privacy violations: {summary['privacy_violations']}",
         f"Write failures: {summary['write_failures']}",
         f"Context failures: {summary['context_failures']}",
+        f"Answer failures with context OK: {summary['answer_failures_with_context_ok']}",
         "",
         "## By category",
         "",
@@ -40,7 +47,7 @@ def render_markdown(summary: dict[str, Any]) -> str:
     for category, row in summary["categories"].items():
         lines.append(
             f"| {category} | {row['cases']} | {row['no_memory_score']:.4f} | "
-            f"{row['memory_score']:.4f} | {row['context_score']:.4f} | {row['memory_lift']:.4f} |"
+            f"{row['memory_score']:.4f} | {_fmt_score(row['context_score'])} | {row['memory_lift']:.4f} |"
         )
 
     lines.append("")
