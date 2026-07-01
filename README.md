@@ -45,6 +45,7 @@ curl -X POST http://127.0.0.1:8000/v1/memories/remember \
   -H "Content-Type: application/json" \
   -d '{
     "source": "demo",
+    "policy_mode": "permissive",
     "items": [
       {
         "type": "fact",
@@ -58,6 +59,38 @@ curl -X POST http://127.0.0.1:8000/v1/memories/remember \
 ```
 
 The response includes saved/rejected/error items, plus `policy_decisions` and `operations` for inspection.
+
+### Policy modes
+
+`/v1/memories/remember` accepts `policy_mode`:
+
+```text
+permissive -> conflicting facts are saved with meta.conflict
+strict     -> conflicting facts are rejected with fact_conflict
+review     -> conflicting facts are rejected with requires_review for future human approval UI
+```
+
+Example strict conflict check:
+
+```bash
+curl -X POST http://127.0.0.1:8000/v1/memories/remember \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source": "demo",
+    "policy_mode": "strict",
+    "items": [
+      {
+        "type": "fact",
+        "subject": "project",
+        "predicate": "backend_framework",
+        "object": "Flask",
+        "meta": {"confidence": 1.0}
+      }
+    ]
+  }'
+```
+
+If `project.backend_framework = FastAPI` already exists, this rejects the incoming `Flask` fact with a `conflict` policy decision.
 
 ### Search memory
 
