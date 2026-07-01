@@ -32,27 +32,15 @@ Output:
 benchmark-results/memory_eval/report.md
 ```
 
-## Run with a real OpenAI-compatible local model
+## Run with a real local model
 
-Example for Ollama OpenAI-compatible API:
+Example:
 
 ```bash
 python benchmarks/memory_eval/run_benchmark.py \
   --provider openai-compatible \
   --base-url http://localhost:11434/v1 \
   --model llama3.1 \
-  --api-key local \
-  --temperature 0
-```
-
-Example for another OpenAI-compatible endpoint:
-
-```bash
-python benchmarks/memory_eval/run_benchmark.py \
-  --provider openai-compatible \
-  --base-url http://127.0.0.1:1234/v1 \
-  --model your-model-name \
-  --api-key local \
   --temperature 0
 ```
 
@@ -75,11 +63,14 @@ Each line in `cases/*.jsonl` is one benchmark case:
   ],
   "expected_answer_contains": ["FastAPI"],
   "expected_answer_not_contains": ["Unknown"],
+  "expected_context_contains": ["FastAPI"],
   "expected_saved_min": 1
 }
 ```
 
 `setup_turns` are the human-readable scenario. `memory_items` are the deterministic writeback inputs used by the current runner. This keeps the benchmark stable while still documenting the original dialogue that produced the memory.
+
+`expected_context_contains` is optional. If it is omitted, the runner reuses `expected_answer_contains` to compute `context_score`. Use it when the context evidence and final answer wording should be scored differently.
 
 Future extension: add an `--ingest session` mode that uses session distillation from `setup_turns` instead of deterministic `memory_items`.
 
@@ -89,9 +80,11 @@ The runner computes:
 
 - `no_memory_score`: answer score without OmniMemory context.
 - `memory_score`: answer score with OmniMemory context and writeback checks.
+- `context_score`: whether OmniMemory retrieved the expected evidence before answer generation.
 - `memory_lift`: `memory_score - no_memory_score`.
 - `privacy_violations`: cases where forbidden values appear in the answer or saved memory.
 - `write_failures`: cases where expected writeback saved/rejected counts were not met.
+- `context_failures`: cases where writeback may be fine, but retrieval/context assembly missed expected evidence.
 
 The benchmark intentionally includes categories that measure different properties:
 
