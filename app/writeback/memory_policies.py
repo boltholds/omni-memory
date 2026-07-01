@@ -54,46 +54,8 @@ class ProvenancePolicy(MemoryWritePolicy):
         )
 
         return WritebackDecision.accept(updated, policy=self.name)
-    
-    
 
-class ProvenancePolicy(MemoryWritePolicy):
-    """
-    Гарантирует, что у объекта есть provenance.
 
-    Если source/time не заполнены, подставляет batch source и текущее время.
-    """
-
-    name = "provenance"
-
-    def apply(
-        self,
-        memory_object: DomainMemoryObject,
-        context: WritebackContext,
-    ) -> WritebackDecision:
-        provenance = memory_object.provenance or Provenance()
-
-        source = provenance.source or context.source or "user"
-        timestamp = provenance.time or time.time()
-
-        meta = dict(provenance.meta or {})
-        if context.meta:
-            meta.setdefault("writeback", {})
-            meta["writeback"].update(context.meta)
-
-        updated = memory_object.model_copy(
-            update={
-                "provenance": Provenance(
-                    source=source,
-                    time=timestamp,
-                    meta=meta,
-                )
-            }
-        )
-
-        return WritebackDecision.accept(updated, policy=self.name)
-    
-    
 class TTLConfig(BaseModel):
     high_volatility_days: int = 7
     normal_days: int = 365
@@ -143,8 +105,8 @@ class TTLPolicy(MemoryWritePolicy):
                 "volatility": volatility,
             },
         )
-        
-        
+
+
 class PiiPolicy(MemoryWritePolicy):
     """
     Блокирует запись объектов, в тексте которых похожие email/API keys/secrets.
@@ -185,9 +147,7 @@ class PiiPolicy(MemoryWritePolicy):
             )
 
         return WritebackDecision.accept(memory_object, policy=self.name)
-    
-    
-    
+
 
 class ConfidenceConfig(BaseModel):
     accept: float = 0.6
@@ -255,8 +215,7 @@ class ConfidencePolicy(MemoryWritePolicy):
             policy=self.name,
             meta={"confidence": confidence},
         )
-        
-        
+
 
 class DedupPolicy(MemoryWritePolicy):
     """
@@ -314,22 +273,30 @@ class DedupPolicy(MemoryWritePolicy):
             policy=self.name,
             meta={"signature": signature},
         )
-        
-        
+
+
 class ConflictPolicy(MemoryWritePolicy):
     """
     Проверяет конфликт фактов вида:
 
         same subject + same predicate + different object
 
-    Для работы нужен graph_repo в WritebackContext.
-    Если graph_repo отсутствует или не умеет query(), политика пропускает объект.
+    Policy modes can be controlled via WritebackRequest.meta["policy_mode"]:
+    - permissive: save the incoming fact and attach conflict metadata;
+    - strict: reject the incoming conflicting fact;
+    - review: reject with requires_review so a future UI can approve/edit it.
     """
 
     name = "conflict"
 
     def __init__(self, *, reject_on_conflict: bool = True) -> None:
         self.reject_on_conflict = reject_on_conflict
+
+    def _mode(self, context: WritebackContext) -> str:
+        mode = str((context.meta or {}).get("policy_mode", "")).lower().strip()
+        if mode in {"permissive", "strict", "review"}:
+            return mode
+        return "strict" if self.reject_on_conflict else "permissive"
 
     def apply(
         self,
@@ -359,6 +326,7 @@ class ConflictPolicy(MemoryWritePolicy):
             return WritebackDecision.accept(memory_object, policy=self.name)
 
         conflict_meta = {
+            "mode": self._mode(context),
             "incoming": {
                 "id": memory_object.id,
                 "subject": memory_object.subject,
@@ -376,10 +344,20 @@ class ConflictPolicy(MemoryWritePolicy):
             ],
         }
 
-        if self.reject_on_conflict:
+        mode = self._mode(context)
+        if mode == "strict":
             return WritebackDecision.reject(
                 memory_object=memory_object,
                 reason="fact_conflict",
+                policy=self.name,
+                meta=conflict_meta,
+            )
+
+        if mode == "review":
+            return WritebackDecision.reject(
+                memory_object=memory_object,
+                reason="requires_review",
+                detail="conflicting_fact_requires_human_review",
                 policy=self.name,
                 meta=conflict_meta,
             )
