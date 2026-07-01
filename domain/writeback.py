@@ -6,6 +6,7 @@ import re
 from typing import Any, Dict, Literal, Protocol, runtime_checkable
 from pydantic import BaseModel, Field, ConfigDict
 from domain.models import Fact, Episode ,Provenance, MemoryObject
+from domain.operations import MemoryOperation, PolicyDecision
 
 
 DomainMemoryObject = MemoryObject | Fact | Episode
@@ -141,6 +142,9 @@ class WritebackResult(BaseModel):
     rejected: list[WritebackDecision] = Field(default_factory=list)
     errors: list[WritebackDecision] = Field(default_factory=list)
 
+    policy_decisions: list[PolicyDecision] = Field(default_factory=list)
+    operations: list[MemoryOperation] = Field(default_factory=list)
+
     @property
     def saved_count(self) -> int:
         return len(self.saved)
@@ -181,6 +185,12 @@ class WritebackResult(BaseModel):
 
     def add_error(self, decision: WritebackDecision) -> None:
         self.errors.append(decision)
+
+    def add_policy_decision(self, decision: PolicyDecision) -> None:
+        self.policy_decisions.append(decision)
+
+    def add_operation(self, operation: MemoryOperation) -> None:
+        self.operations.append(operation)
 
 
 class WritebackRequest(BaseModel):
