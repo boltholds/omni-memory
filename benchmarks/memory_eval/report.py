@@ -25,20 +25,22 @@ def render_markdown(summary: dict[str, Any]) -> str:
         f"Cases: {summary['cases']}",
         f"No-memory score: {summary['no_memory_score']:.4f}",
         f"Memory score: {summary['memory_score']:.4f}",
+        f"Context score: {summary['context_score']:.4f}",
         f"Memory lift: {summary['memory_lift']:.4f}",
         f"Privacy violations: {summary['privacy_violations']}",
         f"Write failures: {summary['write_failures']}",
+        f"Context failures: {summary['context_failures']}",
         "",
         "## By category",
         "",
-        "| Category | Cases | No memory | Memory | Lift |",
-        "|---|---:|---:|---:|---:|",
+        "| Category | Cases | No memory | Memory | Context | Lift |",
+        "|---|---:|---:|---:|---:|---:|",
     ]
 
     for category, row in summary["categories"].items():
         lines.append(
             f"| {category} | {row['cases']} | {row['no_memory_score']:.4f} | "
-            f"{row['memory_score']:.4f} | {row['memory_lift']:.4f} |"
+            f"{row['memory_score']:.4f} | {row['context_score']:.4f} | {row['memory_lift']:.4f} |"
         )
 
     lines.append("")
