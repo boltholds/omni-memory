@@ -72,6 +72,8 @@ Each line in `cases/*.jsonl` is one benchmark case:
 
 `expected_context_contains` is optional. If it is omitted, the runner reuses `expected_answer_contains` to compute `context_score`. Use it when the context evidence and final answer wording should be scored differently.
 
+Privacy-only cases such as `pii` are excluded from `context_score`, because the correct behavior is usually that sensitive evidence does not appear in the assembled context.
+
 Future extension: add an `--ingest session` mode that uses session distillation from `setup_turns` instead of deterministic `memory_items`.
 
 ## Metrics
@@ -85,6 +87,12 @@ The runner computes:
 - `privacy_violations`: cases where forbidden values appear in the answer or saved memory.
 - `write_failures`: cases where expected writeback saved/rejected counts were not met.
 - `context_failures`: cases where writeback may be fine, but retrieval/context assembly missed expected evidence.
+- `answer_failures_with_context_ok`: cases where retrieval succeeded but final answer generation/scoring failed.
+
+Each result row also includes:
+
+- `policy_decisions`: conversion, write-policy and repository decisions produced during writeback.
+- `memory_operations`: remember-operation envelopes with before/after payloads and final status.
 
 The benchmark intentionally includes categories that measure different properties:
 
