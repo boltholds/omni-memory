@@ -1,96 +1,149 @@
 from __future__ import annotations
 
 import json
-import sys
-from typing import Any, TextIO
+from typing import Any
 
-from app.integrations.mcp import MCP_TOOL_SCHEMAS, build_mcp_handlers
+from mcp.server.fastmcp import FastMCP
+
+from app.integrations.mcp import build_mcp_handlers
 from app.memory import OmniMemory
 
 
-class StdioMcpServer:
-    """Minimal MCP-compatible JSON-RPC server over newline-delimited stdio."""
+def build_mcp_app(memory: OmniMemory) -> FastMCP:
+    """Build the official MCP SDK server for an OmniMemory instance."""
+    server = FastMCP("omni-memory")
+    handlers = build_mcp_handlers(memory)
 
-    def __init__(self, memory: OmniMemory) -> None:
-        self._handlers = build_mcp_handlers(memory)
+    def call(name: str, **kwargs: Any) -> str:
+        result = handlers[name](**kwargs)
+        return json.dumps(_to_jsonable(result), ensure_ascii=False, indent=2)
 
-    def serve(self, *, stdin: TextIO | None = None, stdout: TextIO | None = None) -> None:
-        stdin = stdin or sys.stdin
-        stdout = stdout or sys.stdout
+    @server.tool(
+        name="omni_memory_write_items",
+        description="Save memory items through OmniMemory writeback policies.",
+        structured_output=False,
+    )
+    def write_items(
+        items: list[dict[str, Any]],
+        source: str = "mcp",
+        dry_run: bool = False,
+    ) -> str:
+        return call("omni_memory_write_items", items=items, source=source, dry_run=dry_run)
 
-        for raw in stdin:
-            raw = raw.strip()
-            if not raw:
-                continue
+    @server.tool(
+        name="omni_memory_retrieve",
+        description="Retrieve facts, episodes and semantic chunks from OmniMemory.",
+        structured_output=False,
+    )
+    def retrieve(query: str, k_sem: int = 5, k_eps: int = 3) -> str:
+        return call("omni_memory_retrieve", query=query, k_sem=k_sem, k_eps=k_eps)
 
-            response = self.handle_message(json.loads(raw))
-            if response is not None:
-                stdout.write(json.dumps(response, ensure_ascii=False) + "\n")
-                stdout.flush()
+    @server.tool(
+        name="omni_memory_ask",
+        description="Ask a question using OmniMemory context and the configured LLM.",
+        structured_output=False,
+    )
+    def ask(question: str, lang: str = "en", style: str = "concise") -> str:
+        return call("omni_memory_ask", question=question, lang=lang, style=style)
 
-    def handle_message(self, message: dict[str, Any]) -> dict[str, Any] | None:
-        method = message.get("method")
-        request_id = message.get("id")
+    @server.tool(
+        name="omni_memory_context",
+        description="Build an explainable OmniMemory context pack for a query.",
+        structured_output=False,
+    )
+    def context(query: str = "") -> str:
+        return call("omni_memory_context", query=query)
 
-        try:
-            result = self._dispatch(method, message.get("params") or {})
-        except Exception as exc:
-            if request_id is None:
-                return None
-            return {
-                "jsonrpc": "2.0",
-                "id": request_id,
-                "error": {
-                    "code": -32000,
-                    "message": f"{type(exc).__name__}: {exc}",
-                },
-            }
+    @server.tool(
+        name="omni_memory_detect_conflicts",
+        description="Detect conflicts either for provided facts or for facts retrieved by query.",
+        structured_output=False,
+    )
+    def detect_conflicts(
+        query: str | None = None,
+        facts: list[dict[str, Any]] | None = None,
+    ) -> str:
+        return call("omni_memory_detect_conflicts", query=query, facts=facts)
 
-        if request_id is None:
-            return None
+    @server.tool(
+        name="omni_memory_write_fact",
+        description="Save a single structured fact.",
+        structured_output=False,
+    )
+    def write_fact(
+        subject: str,
+        predicate: str,
+        object: str,
+        source: str = "mcp",
+        confidence: float = 1.0,
+    ) -> str:
+        return call(
+            "omni_memory_write_fact",
+            subject=subject,
+            predicate=predicate,
+            object=object,
+            source=source,
+            confidence=confidence,
+        )
 
-        return {
-            "jsonrpc": "2.0",
-            "id": request_id,
-            "result": result,
-        }
+    @server.tool(
+        name="omni_memory_write_note",
+        description="Save a semantic note.",
+        structured_output=False,
+    )
+    def write_note(
+        text: str,
+        source: str = "mcp",
+        meta: dict[str, Any] | None = None,
+    ) -> str:
+        return call("omni_memory_write_note", text=text, source=source, meta=meta or {})
 
-    def _dispatch(self, method: str | None, params: dict[str, Any]) -> dict[str, Any]:
-        if method == "initialize":
-            return {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {"tools": {}},
-                "serverInfo": {"name": "omni-memory", "version": "0.1.0"},
-            }
+    @server.tool(
+        name="omni_memory_session_ingest_turn",
+        description="Append a turn to the in-process session buffer before session distillation.",
+        structured_output=False,
+    )
+    def session_ingest_turn(role: str, content: str) -> str:
+        return call("omni_memory_session_ingest_turn", role=role, content=content)
 
-        if method == "ping":
-            return {}
+    @server.tool(
+        name="omni_memory_session_commit",
+        description="Distill buffered session turns into durable memory.",
+        structured_output=False,
+    )
+    def session_commit(
+        source: str = "mcp-session",
+        dry_run: bool = False,
+        min_confidence: float = 0.75,
+        clear: bool = True,
+        meta: dict[str, Any] | None = None,
+    ) -> str:
+        return call(
+            "omni_memory_session_commit",
+            source=source,
+            dry_run=dry_run,
+            min_confidence=min_confidence,
+            clear=clear,
+            meta=meta or {},
+        )
 
-        if method == "tools/list":
-            return {"tools": MCP_TOOL_SCHEMAS}
+    @server.tool(
+        name="omni_memory_session_clear",
+        description="Clear buffered session turns without writing memory.",
+        structured_output=False,
+    )
+    def session_clear() -> str:
+        return call("omni_memory_session_clear")
 
-        if method == "tools/call":
-            return self._call_tool(params)
+    @server.tool(
+        name="omni_memory_stats",
+        description="Return lightweight repository counts for the local OmniMemory instance.",
+        structured_output=False,
+    )
+    def stats() -> str:
+        return call("omni_memory_stats")
 
-        raise ValueError(f"Unsupported MCP method: {method}")
-
-    def _call_tool(self, params: dict[str, Any]) -> dict[str, Any]:
-        name = params.get("name")
-        arguments = params.get("arguments") or {}
-
-        if name not in self._handlers:
-            raise ValueError(f"Unknown tool: {name}")
-
-        result = self._handlers[name](**arguments)
-        return {
-            "content": [
-                {
-                    "type": "text",
-                    "text": json.dumps(_to_jsonable(result), ensure_ascii=False, indent=2),
-                }
-            ],
-            "isError": False,
-        }
+    return server
 
 
 def _to_jsonable(value: Any) -> Any:
@@ -110,4 +163,4 @@ def _to_jsonable(value: Any) -> Any:
 
 
 def serve_stdio(memory: OmniMemory) -> None:
-    StdioMcpServer(memory).serve()
+    build_mcp_app(memory).run("stdio")

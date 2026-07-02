@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from app.builder import build_memory
 from app.integrations.mcp import MCP_TOOL_SCHEMAS, build_mcp_handlers
-from app.mcp_server import StdioMcpServer
+from app.mcp_server import build_mcp_app
 from infra.embeddings.factory import HashEmbedder
 
 
@@ -12,9 +14,8 @@ def _memory():
     return build_memory(use_llm=False, embedder=HashEmbedder())
 
 
-def _tool_text(response: dict) -> dict:
-    text = response["result"]["content"][0]["text"]
-    return json.loads(text)
+def _tool_text(response) -> dict:
+    return json.loads(response[0].text)
 
 
 def test_mcp_tool_schemas_include_core_memory_tools():
@@ -54,40 +55,22 @@ def test_mcp_handlers_write_retrieve_context_and_conflicts():
     assert conflicts["conflicts"][0]["key"] == "alice::at"
 
 
-def test_mcp_server_lists_and_calls_tools():
-    server = StdioMcpServer(_memory())
+@pytest.mark.asyncio
+async def test_mcp_server_lists_and_calls_tools():
+    server = build_mcp_app(_memory())
 
-    init = server.handle_message({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
-    assert init["result"]["serverInfo"]["name"] == "omni-memory"
+    listed = await server.list_tools()
+    assert any(tool.name == "omni_memory_stats" for tool in listed)
 
-    listed = server.handle_message({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
-    assert any(tool["name"] == "omni_memory_stats" for tool in listed["result"]["tools"])
-
-    called = server.handle_message(
-        {
-            "jsonrpc": "2.0",
-            "id": 3,
-            "method": "tools/call",
-            "params": {"name": "omni_memory_stats", "arguments": {}},
-        }
-    )
+    called = await server.call_tool("omni_memory_stats", {})
     body = _tool_text(called)
     assert body["facts"] == 0
     assert body["llm_configured"] is False
 
 
-def test_mcp_server_returns_json_rpc_error_for_unknown_tool():
-    server = StdioMcpServer(_memory())
+@pytest.mark.asyncio
+async def test_mcp_server_rejects_unknown_tool():
+    server = build_mcp_app(_memory())
 
-    response = server.handle_message(
-        {
-            "jsonrpc": "2.0",
-            "id": "bad-tool",
-            "method": "tools/call",
-            "params": {"name": "missing", "arguments": {}},
-        }
-    )
-
-    assert response["id"] == "bad-tool"
-    assert response["error"]["code"] == -32000
-    assert "Unknown tool" in response["error"]["message"]
+    with pytest.raises(Exception, match="Unknown tool"):
+        await server.call_tool("missing", {})
