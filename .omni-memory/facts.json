@@ -12,5 +12,19 @@
     "meta": {
       "expire_at": 1814445056.6186485
     }
+  },
+  {
+    "id": "f-9fb00127ea6f47f4bf9b84252a7e9659",
+    "subject": "alice-dba46f277d944b0083c02c20171206bf",
+    "predicate": "at",
+    "object": "lighthouse",
+    "provenance": {
+      "source": "user",
+      "time": 1783028926.2150192,
+      "meta": {}
+    },
+    "meta": {
+      "expire_at": 1814564926.2150192
+    }
   }
 ]

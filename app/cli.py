@@ -613,5 +613,36 @@ def memory_path_cmd(
     typer.echo(f"facts:  {Path('.omni-memory') / 'facts.json'}")
     typer.echo(f"vector: {vector_dir}")
 
+
+@app.command("mcp")
+def mcp_cmd(
+    use_llm: bool = typer.Option(False, help="Use configured LLM provider for omni_memory_ask."),
+    embedding_provider: str = typer.Option(
+        "hash",
+        "--embedding-provider",
+        help="BYO-Embedder provider: hash, sentence-transformers.",
+    ),
+    embedding_model: str | None = typer.Option(
+        None,
+        "--embedding-model",
+        help="Embedding model name, for example sentence-transformers/all-MiniLM-L6-v2.",
+    ),
+    embedding_device: str | None = typer.Option(
+        None,
+        "--embedding-device",
+        help="Optional embedding device, for example cpu or cuda.",
+    ),
+):
+    """Run OmniMemory as an MCP stdio server."""
+    from app.mcp_server import serve_stdio
+
+    memory = _local_memory(
+        use_llm=use_llm,
+        embedding_provider=embedding_provider,
+        embedding_model=embedding_model,
+        embedding_device=embedding_device,
+    )
+    serve_stdio(memory)
+
 if __name__ == "__main__":
     app()
