@@ -26,6 +26,7 @@ def test_mcp_tool_schemas_include_core_memory_tools():
     assert "omni_memory_context" in names
     assert "omni_memory_detect_conflicts" in names
     assert "omni_memory_session_commit" in names
+    assert "omni_memory_clear" in names
     assert "omni_memory_stats" in names
 
 
@@ -55,12 +56,52 @@ def test_mcp_handlers_write_retrieve_context_and_conflicts():
     assert conflicts["conflicts"][0]["key"] == "alice::at"
 
 
+def test_mcp_clear_removes_selected_memory_stores():
+    handlers = build_mcp_handlers(_memory())
+
+    handlers["omni_memory_write_fact"](
+        subject="alice",
+        predicate="at",
+        object="lighthouse",
+        source="test",
+    )
+    handlers["omni_memory_write_note"](text="Project uses MCP tools.", source="test")
+    handlers["omni_memory_session_ingest_turn"](role="user", content="remember this transiently")
+
+    dry_run = handlers["omni_memory_clear"](dry_run=True)
+    assert dry_run == {
+        "vector_objects": 1,
+        "facts": 1,
+        "episodes": 0,
+        "session_turns": 1,
+        "dry_run": True,
+    }
+    assert handlers["omni_memory_stats"]()["facts"] == 1
+
+    cleared = handlers["omni_memory_clear"]()
+    assert cleared == {
+        "vector_objects": 1,
+        "facts": 1,
+        "episodes": 0,
+        "session_turns": 1,
+        "dry_run": False,
+    }
+
+    stats = handlers["omni_memory_stats"]()
+    assert stats["vector_objects"] == 0
+    assert stats["facts"] == 0
+    assert stats["session_turns"] == 0
+    assert handlers["omni_memory_retrieve"](query="alice lighthouse project")["facts"] == []
+    assert handlers["omni_memory_retrieve"](query="alice lighthouse project")["semantic_chunks"] == []
+
+
 @pytest.mark.asyncio
 async def test_mcp_server_lists_and_calls_tools():
     server = build_mcp_app(_memory())
 
     listed = await server.list_tools()
     assert any(tool.name == "omni_memory_stats" for tool in listed)
+    assert any(tool.name == "omni_memory_clear" for tool in listed)
 
     called = await server.call_tool("omni_memory_stats", {})
     body = _tool_text(called)

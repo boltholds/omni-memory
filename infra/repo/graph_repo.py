@@ -25,6 +25,15 @@ class GraphRepo(IGraphRepository):
     
     def count(self) -> int:
         return self._g.number_of_edges()
+
+    def clear(self) -> int:
+        removed = self.count()
+        self._g.clear()
+        try:
+            GRAPH_FACTS.set(self.count())
+        except Exception:
+            pass
+        return removed
     
     # ---- IGraphRepository ----
     def save_fact(self, fact: Fact) -> None:

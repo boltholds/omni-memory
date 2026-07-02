@@ -136,6 +136,27 @@ def build_mcp_app(memory: OmniMemory) -> FastMCP:
         return call("omni_memory_session_clear")
 
     @server.tool(
+        name="omni_memory_clear",
+        description="Clear durable OmniMemory stores and/or the in-process session buffer.",
+        structured_output=False,
+    )
+    def clear(
+        include_vectors: bool = True,
+        include_facts: bool = True,
+        include_episodes: bool = True,
+        include_session: bool = True,
+        dry_run: bool = False,
+    ) -> str:
+        return call(
+            "omni_memory_clear",
+            include_vectors=include_vectors,
+            include_facts=include_facts,
+            include_episodes=include_episodes,
+            include_session=include_session,
+            dry_run=dry_run,
+        )
+
+    @server.tool(
         name="omni_memory_stats",
         description="Return lightweight repository counts for the local OmniMemory instance.",
         structured_output=False,

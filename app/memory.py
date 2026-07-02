@@ -59,6 +59,15 @@ class MemoryAnswer:
     model: str | None = None
 
 
+@dataclass(frozen=True)
+class MemoryClearReport:
+    vector_objects: int = 0
+    facts: int = 0
+    episodes: int = 0
+    session_turns: int = 0
+    dry_run: bool = False
+
+
 def build_writeback_service(
     *,
     vector_repo: VectorStoreRepo,
@@ -246,6 +255,38 @@ class OmniMemory:
     def clear_session(self) -> None:
         self._session_turns.clear()
 
+    def clear(
+        self,
+        *,
+        include_vectors: bool = True,
+        include_facts: bool = True,
+        include_episodes: bool = True,
+        include_session: bool = True,
+        dry_run: bool = False,
+    ) -> MemoryClearReport:
+        vector_objects = _repo_count(self.vector_repo) if include_vectors else 0
+        facts = _repo_count(self.graph_repo) if include_facts else 0
+        episodes = _repo_count(self.episodic_repo) if include_episodes else 0
+        session_turns = len(self._session_turns) if include_session else 0
+
+        if not dry_run:
+            if include_vectors:
+                _repo_clear(self.vector_repo)
+            if include_facts:
+                _repo_clear(self.graph_repo)
+            if include_episodes:
+                _repo_clear(self.episodic_repo)
+            if include_session:
+                self.clear_session()
+
+        return MemoryClearReport(
+            vector_objects=vector_objects,
+            facts=facts,
+            episodes=episodes,
+            session_turns=session_turns,
+            dry_run=dry_run,
+        )
+
     def commit_session(
         self,
         *,
@@ -363,3 +404,13 @@ class OmniMemory:
             rejected=result.rejected_count + result.error_count,
             reasons=result.reasons,
         )
+
+
+def _repo_count(repo: Any) -> int:
+    return int(repo.count()) if hasattr(repo, "count") else 0
+
+
+def _repo_clear(repo: Any) -> int:
+    if not hasattr(repo, "clear"):
+        return 0
+    return int(repo.clear())

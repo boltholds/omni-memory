@@ -130,6 +130,20 @@ MCP_TOOL_SCHEMAS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "omni_memory_clear",
+        "description": "Clear durable OmniMemory stores and/or the in-process session buffer.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "include_vectors": {"type": "boolean", "default": True},
+                "include_facts": {"type": "boolean", "default": True},
+                "include_episodes": {"type": "boolean", "default": True},
+                "include_session": {"type": "boolean", "default": True},
+                "dry_run": {"type": "boolean", "default": False},
+            },
+        },
+    },
+    {
         "name": "omni_memory_stats",
         "description": "Return lightweight repository counts for the local OmniMemory instance.",
         "inputSchema": {
@@ -193,6 +207,13 @@ def build_mcp_handlers(memory: OmniMemory) -> dict[str, Callable[..., Any]]:
             clear=kwargs.get("clear", True),
         ).model_dump(),
         "omni_memory_session_clear": lambda **kwargs: _session_clear(memory),
+        "omni_memory_clear": lambda **kwargs: memory.clear(
+            include_vectors=kwargs.get("include_vectors", True),
+            include_facts=kwargs.get("include_facts", True),
+            include_episodes=kwargs.get("include_episodes", True),
+            include_session=kwargs.get("include_session", True),
+            dry_run=kwargs.get("dry_run", False),
+        ).__dict__,
         "omni_memory_stats": lambda **kwargs: _stats(memory),
     }
 

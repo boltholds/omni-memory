@@ -34,6 +34,11 @@ class PersistentVectorRepo:
     def count(self) -> int:
         return self.inner.count()
 
+    def clear(self) -> int:
+        removed = self.inner.clear()
+        self._flush()
+        return removed
+
     def gc_expired(self, now: float | None = None) -> int:
         removed = self.inner.gc_expired(now)
         if removed:

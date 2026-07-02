@@ -123,6 +123,20 @@ class EpisodicRepo(IEpisodicRepository):
     def count(self) -> int:
         row = self._conn.execute("SELECT COUNT(*) AS n FROM episodes").fetchone()
         return int(row["n"] if isinstance(row, sqlite3.Row) else row[0])
+
+    def clear(self) -> int:
+        removed = self.count()
+        try:
+            with self._conn:
+                self._conn.execute("DELETE FROM events")
+                self._conn.execute("DELETE FROM episodes")
+        except sqlite3.Error as e:
+            raise PersistenceError("Failed to clear episodes") from e
+        try:
+            EPISODES.set(self.count())
+        except Exception:
+            pass
+        return removed
     
     @timed("retriever.retrieve", slow_ms=100)
     def search(self, user: str | None, entities: list[str], k: int = 5) -> List[Episode]:
