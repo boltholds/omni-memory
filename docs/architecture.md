@@ -132,6 +132,27 @@ include_ephemeral=false         -> hide ephemeral/session memories
 
 This means a query about `OmniMemory dependency issue` can prefer OmniMemory-scoped skills over Persona-scoped skills even if both match the lexical query. If no domain is detected and no scope is provided, retrieval still works like ordinary memory retrieval, with only hygiene penalties applied.
 
+## Retrieval reranking
+
+`ModelBundle` can provide an optional `IReranker` cross-encoder-like component:
+
+```text
+ModelBundle(reranker=my_reranker)
+```
+
+Retrieval ranking is staged:
+
+```text
+repository candidates
+  -> hard scope filters
+  -> cheap scope/time/hygiene pre-rank
+  -> bounded rerank candidate pool
+  -> IReranker.rerank(query, candidates)
+  -> final top-k
+```
+
+If the reranker is absent or fails, retrieval falls back to the deterministic pre-rank order. This keeps BYOM reranking optional and safe while allowing a production cross-encoder to improve semantic ordering for notes, episodes, decisions, experience, skills and failure patterns.
+
 ## Production-like fact mining
 
 Fact mining is not a regex write path. It is a gated candidate pipeline:
