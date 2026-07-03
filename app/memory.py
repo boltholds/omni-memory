@@ -258,22 +258,22 @@ class OmniMemory:
             self.clear_session()
         return result
 
-    def retrieve(self, query: str, *, k_sem: int = 5, k_eps: int = 3, intent: str | None = None, mode: str | None = None) -> RetrievalBundle:
-        return self.retriever.retrieve(query, k_sem=k_sem, k_eps=k_eps, intent=intent, mode=mode)
+    def retrieve(self, query: str, *, k_sem: int = 5, k_eps: int = 3, intent: str | None = None, mode: str | None = None, scope: dict[str, Any] | None = None) -> RetrievalBundle:
+        return self.retriever.retrieve(query, k_sem=k_sem, k_eps=k_eps, intent=intent, mode=mode, scope=scope)
 
-    def build_context(self, query: str, *, intent: str | None = None, mode: str | None = None) -> ContextPack:
-        bundle = self.orchestrator.plan_retrieval(query, intent=intent, mode=mode)
+    def build_context(self, query: str, *, intent: str | None = None, mode: str | None = None, scope: dict[str, Any] | None = None) -> ContextPack:
+        bundle = self.orchestrator.plan_retrieval(query, intent=intent, mode=mode, scope=scope)
         return self.orchestrator.assemble_context(bundle, intent=intent, mode=mode)
 
-    def detect_conflicts(self, query: str | None = None, *, intent: str | None = None) -> ConflictReport:
-        bundle = self.orchestrator.plan_retrieval(query or "", intent=intent)
+    def detect_conflicts(self, query: str | None = None, *, intent: str | None = None, scope: dict[str, Any] | None = None) -> ConflictReport:
+        bundle = self.orchestrator.plan_retrieval(query or "", intent=intent, scope=scope)
         return self.consistency.detect_conflicts(bundle.facts)
 
     def maintain_facts(self, command: FactMaintenanceCommand | dict[str, Any]) -> FactMaintenanceResult:
         return self.fact_maintenance.execute(command)
 
-    def ask(self, question: str, *, lang: str = "en", style: str = "concise", temperature: float | None = None, include_context: bool = True, intent: str | None = None, mode: str | None = None) -> MemoryAnswer:
-        bundle = self.orchestrator.plan_retrieval(question, intent=intent, mode=mode)
+    def ask(self, question: str, *, lang: str = "en", style: str = "concise", temperature: float | None = None, include_context: bool = True, intent: str | None = None, mode: str | None = None, scope: dict[str, Any] | None = None) -> MemoryAnswer:
+        bundle = self.orchestrator.plan_retrieval(question, intent=intent, mode=mode, scope=scope)
         pack = self.orchestrator.assemble_context(bundle, intent=intent, mode=mode)
         conflict_report = self.consistency.detect_conflicts(bundle.facts)
         if self.llm is None:
