@@ -4,8 +4,6 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 
-from langchain_core.runnables import RunnableLambda
-
 from app.config import settings
 from app.services.answering import quality_judge
 from domain.llm import ILLMProvider
@@ -41,6 +39,26 @@ class AnswerChainStrategy(Protocol):
 
     def handle(self, state: AnswerChainState) -> AnswerChainState:
         ...
+
+
+class _SequentialAnswerChain:
+    """Tiny internal replacement for LangChain Runnable composition.
+
+    The answer pipeline is intentionally dependency-light. It keeps the same
+    `.invoke(state)` shape used by tests and callers without requiring
+    `langchain-core` in the stable install path.
+    """
+
+    def __init__(self, strategies: list[AnswerChainStrategy]) -> None:
+        if not strategies:
+            raise ValueError("Answer chain requires at least one strategy")
+        self._strategies = strategies
+
+    def invoke(self, state: AnswerChainState) -> AnswerChainState:
+        current = state
+        for strategy in self._strategies:
+            current = strategy.handle(current)
+        return current
 
 
 class BuildContextStrategy:
@@ -215,11 +233,4 @@ class LangChainAnswerPipeline:
 
     @staticmethod
     def _build_chain(strategies: list[AnswerChainStrategy]):
-        if not strategies:
-            raise ValueError("Answer chain requires at least one strategy")
-
-        chain = RunnableLambda(strategies[0].handle).with_config(run_name=strategies[0].name)
-        for strategy in strategies[1:]:
-            chain = chain | RunnableLambda(strategy.handle).with_config(run_name=strategy.name)
-
-        return chain
+        return _SequentialAnswerChain(strategies)
