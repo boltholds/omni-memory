@@ -2,9 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-
 DEFAULT_MEMORY_INTENT = "full"
-
 
 @dataclass(frozen=True)
 class MemoryIntentProfile:
@@ -16,6 +14,8 @@ class MemoryIntentProfile:
     episodes: bool = True
     decisions: bool = True
     experiences: bool = True
+    skills: bool = True
+    failure_patterns: bool = True
     context_sections: tuple[str, ...] = (
         "conflicts",
         "current_beliefs",
@@ -23,9 +23,10 @@ class MemoryIntentProfile:
         "episodes",
         "decisions",
         "relevant_experience",
+        "skills",
+        "failure_patterns",
         "semantic_notes",
     )
-
 
 class MemoryPlanner:
     def __init__(self, profiles: dict[str, MemoryIntentProfile] | None = None) -> None:
@@ -36,7 +37,6 @@ class MemoryPlanner:
     def profile(self, intent: str | None = None, *, mode: str | None = None) -> MemoryIntentProfile:
         requested = _normalize_intent(intent or mode)
         return self._profiles.get(requested) or self._profiles[DEFAULT_MEMORY_INTENT]
-
 
 def _default_profiles() -> list[MemoryIntentProfile]:
     return [
@@ -50,12 +50,9 @@ def _default_profiles() -> list[MemoryIntentProfile]:
             episodes=False,
             decisions=False,
             experiences=False,
-            context_sections=(
-                "conflicts",
-                "current_beliefs",
-                "facts",
-                "semantic_notes",
-            ),
+            skills=False,
+            failure_patterns=False,
+            context_sections=("conflicts", "current_beliefs", "facts", "semantic_notes"),
         ),
         MemoryIntentProfile(
             name="make_decision",
@@ -66,10 +63,9 @@ def _default_profiles() -> list[MemoryIntentProfile]:
             episodes=False,
             decisions=True,
             experiences=True,
-            context_sections=(
-                "decisions",
-                "relevant_experience",
-            ),
+            skills=True,
+            failure_patterns=False,
+            context_sections=("decisions", "relevant_experience", "skills"),
         ),
         MemoryIntentProfile(
             name="debug_failure",
@@ -80,7 +76,9 @@ def _default_profiles() -> list[MemoryIntentProfile]:
             episodes=False,
             decisions=False,
             experiences=True,
-            context_sections=("relevant_experience",),
+            skills=True,
+            failure_patterns=True,
+            context_sections=("failure_patterns", "skills", "relevant_experience"),
         ),
         MemoryIntentProfile(
             name="plan_task",
@@ -91,13 +89,9 @@ def _default_profiles() -> list[MemoryIntentProfile]:
             episodes=False,
             decisions=True,
             experiences=True,
-            context_sections=(
-                "current_beliefs",
-                "facts",
-                "decisions",
-                "relevant_experience",
-                "semantic_notes",
-            ),
+            skills=True,
+            failure_patterns=True,
+            context_sections=("current_beliefs", "facts", "decisions", "skills", "failure_patterns", "relevant_experience", "semantic_notes"),
         ),
         MemoryIntentProfile(
             name="write_code",
@@ -108,14 +102,11 @@ def _default_profiles() -> list[MemoryIntentProfile]:
             episodes=False,
             decisions=True,
             experiences=True,
-            context_sections=(
-                "decisions",
-                "relevant_experience",
-                "semantic_notes",
-            ),
+            skills=True,
+            failure_patterns=True,
+            context_sections=("decisions", "skills", "failure_patterns", "relevant_experience", "semantic_notes"),
         ),
     ]
-
 
 def _normalize_intent(value: str | None) -> str:
     normalized = str(value or DEFAULT_MEMORY_INTENT).strip().lower().replace("-", "_").replace(" ", "_")
