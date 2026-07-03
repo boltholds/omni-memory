@@ -132,6 +132,34 @@ include_ephemeral=false         -> hide ephemeral/session memories
 
 This means a query about `OmniMemory dependency issue` can prefer OmniMemory-scoped skills over Persona-scoped skills even if both match the lexical query. If no domain is detected and no scope is provided, retrieval still works like ordinary memory retrieval, with only hygiene penalties applied.
 
+## Production-like fact mining
+
+Fact mining is not a regex write path. It is a gated candidate pipeline:
+
+```text
+source text
+  -> FactExtractor port
+  -> LLMFactExtractor JSON schema extraction
+  -> candidate schema validation
+  -> evidence quote grounding
+  -> confidence / PII / secret / uncertainty checks
+  -> WriteBackService policy dry-run
+  -> candidate status: policy_accepted | requires_review | policy_rejected | saved
+```
+
+The default production extractor is `LLMFactExtractor`, which uses the configured BYO-LLM provider and asks for strict JSON candidates. Tests and offline integrations can inject `StaticFactExtractor`, but the core service does not depend on deterministic regex mining.
+
+Fact mining is dry-run by default:
+
+```text
+OmniMemory.mine_facts(..., dry_run=True)
+POST /v1/facts/mine { "dry_run": true }
+```
+
+Dry-run still runs conversion and write policies, including provenance, scope, TTL, PII, conflict, confidence and dedup checks. It returns auditable operations and policy decisions, but does not save to repositories. Applying candidates requires an explicit `dry_run=false` call.
+
+Conflict handling defaults to `policy_mode=review`, so conflicting mined facts become review candidates instead of silently overwriting durable memory.
+
 ## Policy-first writeback
 
 Every write passes through:
