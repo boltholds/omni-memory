@@ -110,16 +110,17 @@ class ExperienceConsolidator:
                 continue
             if evaluation.reuse_potential < 0.5:
                 continue
-            if evaluation.recommended_memory_type not in {"skill", "both", "none"} and evaluation.success_score < 0.6:
+            if not _has_success_signal(item, evaluation):
                 continue
             key = _topic_key(item)
             buckets.setdefault(key, []).append(item)
 
         proposals: list[ConsolidationProposal] = []
         for topic, items in buckets.items():
+            items = _distinct_experiences(items)
             if len(items) < 2:
                 continue
-            evidence_ids = [item.id for item in items]
+            evidence_ids = _unique_ids(item.id for item in items)
             confidence = min(0.99, sum(item.confidence for item in items) / len(items))
             primary = max(items, key=lambda item: item.confidence)
             payload = {
@@ -150,17 +151,24 @@ class ExperienceConsolidator:
         return proposals
 
     def _failure_pattern_proposals(self, experiences: list[ExperienceRecord], evaluations: dict[str, EvaluationResult]) -> list[ConsolidationProposal]:
-        failed = [item for item in experiences if _looks_failed(item, evaluations[item.id])]
-        successful = [item for item in experiences if _looks_successful(item, evaluations[item.id])]
+        failed = [item for item in experiences if _has_failure_signal(item, evaluations[item.id])]
+        successful = [item for item in experiences if _has_success_signal(item, evaluations[item.id])]
         proposals: list[ConsolidationProposal] = []
 
         for failure in failed:
             topic = _topic_key(failure)
-            fixes = [item for item in successful if _topic_key(item) == topic]
+            fixes = [
+                item
+                for item in successful
+                if item.id != failure.id and _topic_key(item) == topic and _has_success_signal(item, evaluations[item.id])
+            ]
+            fixes = _distinct_experiences(fixes)
             if not fixes:
                 continue
-            fix = max(fixes, key=lambda item: item.confidence)
-            evidence_ids = [failure.id, fix.id]
+            fix = max(fixes, key=lambda item: evaluations[item.id].success_score)
+            evidence_ids = _unique_ids([failure.id, fix.id])
+            if len(evidence_ids) < 2:
+                continue
             confidence = min(0.95, (failure.confidence + fix.confidence) / 2)
             payload = {
                 "symptom": failure.outcome or failure.goal,
@@ -270,6 +278,21 @@ def _unique(values: list[str]) -> list[str]:
     return out
 
 
+def _unique_ids(values: list[str] | Any) -> list[str]:
+    return _unique([str(value) for value in values if str(value)])
+
+
+def _distinct_experiences(items: list[ExperienceRecord]) -> list[ExperienceRecord]:
+    out: list[ExperienceRecord] = []
+    seen: set[str] = set()
+    for item in items:
+        if item.id in seen:
+            continue
+        seen.add(item.id)
+        out.append(item)
+    return out
+
+
 def _skill_name(topic: str, primary: ExperienceRecord) -> str:
     if primary.decision:
         return primary.decision[:120]
@@ -286,11 +309,11 @@ def _skill_procedure(items: list[ExperienceRecord]) -> list[str]:
     return lessons[:5]
 
 
-def _looks_failed(item: ExperienceRecord, evaluation: EvaluationResult) -> bool:
+def _has_failure_signal(item: ExperienceRecord, evaluation: EvaluationResult) -> bool:
     return evaluation.failure_score >= 0.6 or evaluation.recommended_memory_type in {"failure_pattern", "both"}
 
 
-def _looks_successful(item: ExperienceRecord, evaluation: EvaluationResult) -> bool:
+def _has_success_signal(item: ExperienceRecord, evaluation: EvaluationResult) -> bool:
     return evaluation.success_score >= 0.6 or evaluation.recommended_memory_type in {"skill", "both"}
 
 
