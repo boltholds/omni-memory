@@ -1,7 +1,18 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import List
-from .models import MemoryObject, Fact, Episode, DecisionRecord, ExperienceRecord, RetrievalBundle, ConflictReport, ContextPack
+from .models import (
+    ContextPack,
+    ConflictReport,
+    DecisionRecord,
+    Episode,
+    ExperienceRecord,
+    Fact,
+    FailurePatternRecord,
+    MemoryObject,
+    RetrievalBundle,
+    SkillRecord,
+)
 
 class IMemoryReadRepository(ABC):
     @abstractmethod
@@ -42,6 +53,26 @@ class IExperienceRepository(ABC):
     def list_experiences(self, limit: int | None = None) -> List[ExperienceRecord]: ...
     @abstractmethod
     def search(self, text: str, k: int = 5) -> List[ExperienceRecord]: ...
+
+class ISkillRepository(ABC):
+    @abstractmethod
+    def save_skill(self, skill: SkillRecord) -> None: ...
+    @abstractmethod
+    def get_skill(self, skill_id: str) -> SkillRecord | None: ...
+    @abstractmethod
+    def list_skills(self, limit: int | None = None) -> List[SkillRecord]: ...
+    @abstractmethod
+    def search(self, text: str, k: int = 5) -> List[SkillRecord]: ...
+
+class IFailurePatternRepository(ABC):
+    @abstractmethod
+    def save_failure_pattern(self, pattern: FailurePatternRecord) -> None: ...
+    @abstractmethod
+    def get_failure_pattern(self, pattern_id: str) -> FailurePatternRecord | None: ...
+    @abstractmethod
+    def list_failure_patterns(self, limit: int | None = None) -> List[FailurePatternRecord]: ...
+    @abstractmethod
+    def search(self, text: str, k: int = 5) -> List[FailurePatternRecord]: ...
 
 class IConsistencyEngine(ABC):
     @abstractmethod
