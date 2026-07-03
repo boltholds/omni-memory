@@ -64,6 +64,54 @@ class DevelopmentExperienceEvaluator:
         )
 
 
+class OpsExperienceEvaluator:
+    """Deterministic evaluator for operations and incident-response cycles."""
+
+    def evaluate(self, experience: ExperienceRecord) -> EvaluationResult:
+        validation = _validation(experience)
+        text = _experience_text(experience)
+        restored = bool(validation.get("sla_restored"))
+        missed = bool(validation.get("sla_missed"))
+        improved_score = _metric_improvement_score(
+            _dict_float(validation.get("metrics_before")),
+            _dict_float(validation.get("metrics_after")),
+        )
+        unresolved = _contains_any(text, ["unresolved", "escalated", "still failing", "sla missed", "not restored"])
+        resolved = restored or improved_score >= 0.6 or _contains_any(text, ["resolved", "restored", "recovered", "returned to baseline"])
+        failed = missed or unresolved or improved_score < -0.2
+
+        success_score = 0.9 if resolved else max(0.2, 0.5 + improved_score / 2)
+        failure_score = 0.85 if failed else (0.35 if restored and resolved else 0.1)
+        risk_score = 0.8 if failed else (0.5 if restored and resolved else 0.2)
+        reuse_potential = 0.85 if experience.lesson and experience.reuse_when else 0.45
+        recommended: RecommendedMemoryType = "none"
+        if resolved and failed:
+            recommended = "both"
+        elif resolved:
+            recommended = "skill"
+        elif failed:
+            recommended = "failure_pattern"
+
+        tags = ["ops"]
+        service = validation.get("service") or experience.meta.get("service")
+        if service:
+            tags.append(f"service:{service}")
+        if restored:
+            tags.append("sla_restored")
+        if failed:
+            tags.append("incident")
+
+        return EvaluationResult(
+            success_score=min(0.99, max(0.0, success_score)),
+            failure_score=min(0.99, max(0.0, failure_score)),
+            risk_score=min(0.99, max(0.0, risk_score)),
+            reuse_potential=reuse_potential,
+            consolidation_tags=tags,
+            recommended_memory_type=recommended,
+            meta={"deterministic": True, "domain": "ops", "metric_improvement_score": improved_score},
+        )
+
+
 class GenericExperienceEvaluator(DevelopmentExperienceEvaluator):
     """Backward-compatible default evaluator using text and explicit success flags."""
 
@@ -76,7 +124,10 @@ class GenericExperienceEvaluator(DevelopmentExperienceEvaluator):
 
 class DomainExperienceEvaluator:
     def __init__(self, evaluators: dict[str, ExperienceEvaluator] | None = None, default: ExperienceEvaluator | None = None) -> None:
-        self.evaluators: dict[str, ExperienceEvaluator] = {"development": DevelopmentExperienceEvaluator()}
+        self.evaluators: dict[str, ExperienceEvaluator] = {
+            "development": DevelopmentExperienceEvaluator(),
+            "ops": OpsExperienceEvaluator(),
+        }
         if evaluators:
             self.evaluators.update(evaluators)
         self.default = default or GenericExperienceEvaluator()
@@ -117,3 +168,40 @@ def _experience_text(experience: ExperienceRecord) -> str:
 
 def _contains_any(text: str, markers: list[str]) -> bool:
     return any(marker in text for marker in markers)
+
+
+def _validation(experience: ExperienceRecord) -> dict[str, Any]:
+    raw = experience.evaluation.get("validation") or experience.meta.get("validation") or {}
+    return dict(raw) if isinstance(raw, dict) else {}
+
+
+def _dict_float(value: Any) -> dict[str, float]:
+    if not isinstance(value, dict):
+        return {}
+    out: dict[str, float] = {}
+    for key, raw in value.items():
+        try:
+            out[str(key)] = float(raw)
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _metric_improvement_score(before: dict[str, float], after: dict[str, float]) -> float:
+    if not before or not after:
+        return 0.0
+    scores: list[float] = []
+    for key, before_value in before.items():
+        if key not in after or before_value == 0:
+            continue
+        after_value = after[key]
+        delta = (before_value - after_value) / abs(before_value) if _lower_is_better(key) else (after_value - before_value) / abs(before_value)
+        scores.append(max(-1.0, min(1.0, delta)))
+    if not scores:
+        return 0.0
+    return sum(scores) / len(scores)
+
+
+def _lower_is_better(metric_name: str) -> bool:
+    key = metric_name.casefold()
+    return any(token in key for token in ["latency", "error", "failure", "fail", "cost", "duration", "queue", "saturation", "cpu", "memory"])
