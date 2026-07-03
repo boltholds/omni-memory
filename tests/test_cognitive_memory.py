@@ -20,6 +20,7 @@ def test_mcp_schemas_include_cognitive_memory_tools():
     assert "omni_memory_list_failure_patterns" in names
     assert "omni_memory_get_failure_pattern" in names
     assert "omni_memory_search_failure_patterns" in names
+    assert "omni_memory_consolidate_experiences" in names
 
 
 def test_skill_memory_write_list_get_and_search():
@@ -94,3 +95,76 @@ def test_stats_and_clear_include_cognitive_memory_repos():
     stats_after = handlers["omni_memory_stats"]()
     assert stats_after["skills"] == 0
     assert stats_after["failure_patterns"] == 0
+
+
+def test_consolidation_dry_run_proposes_skill_without_writing():
+    handlers = build_mcp_handlers(_memory())
+
+    for suffix in ["one", "two"]:
+        handlers["omni_memory_write_experience"](
+            goal="Fix CI dependency issue",
+            context="CI collection fails because a package import is missing.",
+            decision="Remove unnecessary dependency from answer chain",
+            actions=["Read failing import", "Replace dependency with local runner"],
+            outcome=f"pytest passed after fix {suffix}",
+            evaluation={"success": True, "tests": "passed"},
+            lesson="Prefer removing unnecessary dependency before adding a heavy package.",
+            reuse_when=["CI fails during collection", "missing package import"],
+            confidence=0.92,
+            source="test",
+        )
+
+    result = handlers["omni_memory_consolidate_experiences"](dry_run=True, min_confidence=0.85)
+
+    assert result["dry_run"] is True
+    assert any(proposal["kind"] == "skill" for proposal in result["proposals"])
+    assert handlers["omni_memory_stats"]()["skills"] == 0
+
+
+def test_consolidation_apply_saves_skill_and_failure_pattern_for_context():
+    handlers = build_mcp_handlers(_memory())
+
+    for suffix in ["one", "two"]:
+        handlers["omni_memory_write_experience"](
+            goal="Fix CI dependency issue",
+            context="CI collection fails because a package import is missing.",
+            decision="Remove unnecessary dependency from answer chain",
+            actions=["Read failing import", "Replace dependency with local runner"],
+            outcome=f"pytest passed after fix {suffix}",
+            evaluation={"success": True, "tests": "passed"},
+            lesson="Prefer removing unnecessary dependency before adding a heavy package.",
+            reuse_when=["CI fails during collection", "missing package import"],
+            confidence=0.92,
+            source="test",
+        )
+
+    handlers["omni_memory_write_experience"](
+        goal="Fix CI dependency issue",
+        context="CI collection fails because a package import is missing.",
+        decision="Add missing dependency blindly",
+        actions=["Added package without checking if import was necessary"],
+        outcome="pytest failed with regression during collection",
+        evaluation={"success": False, "tests": "failed"},
+        lesson="Blindly adding dependencies can create CI regressions.",
+        reuse_when=["CI fails during collection", "missing package import"],
+        confidence=0.91,
+        source="test",
+    )
+
+    applied = handlers["omni_memory_consolidate_experiences"](dry_run=False, min_confidence=0.85)
+
+    assert applied["dry_run"] is False
+    assert applied["saved_skills"]
+    assert applied["saved_failure_patterns"]
+    assert handlers["omni_memory_stats"]()["skills"] >= 1
+    assert handlers["omni_memory_stats"]()["failure_patterns"] >= 1
+
+    context = handlers["omni_memory_context"](
+        query="CI dependency issue missing package collection failure",
+        intent="debug_failure",
+    )
+    sections = {section["title"]: section["body"] for section in context["sections"]}
+    assert "Skills" in sections
+    assert "Failure Patterns" in sections
+    assert "dependency" in sections["Skills"].lower()
+    assert "pytest failed" in sections["Failure Patterns"].lower()
