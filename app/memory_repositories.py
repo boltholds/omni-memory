@@ -11,6 +11,7 @@ from infra.repo.domain_graph_repo import DomainGraphRepo
 from infra.repo.episodic_repo import EpisodicRepo
 from infra.repo.experience_repo import ExperienceRepo
 from infra.repo.graph_repo import GraphRepo
+from infra.repo.review_repo import ReviewQueueRepo
 from infra.repo.vector_repo import VectorStoreRepo
 
 
@@ -23,6 +24,7 @@ class MemoryClearReport:
     experiences: int = 0
     skills: int = 0
     failure_patterns: int = 0
+    review_items: int = 0
     session_turns: int = 0
     dry_run: bool = False
 
@@ -36,6 +38,7 @@ class MemoryRepositoryCounts:
     experiences: int | None = None
     skills: int | None = None
     failure_patterns: int | None = None
+    review_items: int | None = None
     domain_nodes: int | None = None
     domain_links: int | None = None
 
@@ -49,6 +52,7 @@ class MemoryClearCommand:
     include_experiences: bool = True
     include_skills: bool = True
     include_failure_patterns: bool = True
+    include_review_items: bool = True
     include_session: bool = True
     dry_run: bool = False
 
@@ -71,6 +75,7 @@ class MemoryClearCommand:
                 counts.failure_patterns,
                 include=self.include_failure_patterns,
             ),
+            review_items=_report_count(counts.review_items, include=self.include_review_items),
             session_turns=session_turns if self.include_session else 0,
             dry_run=self.dry_run,
         )
@@ -86,6 +91,7 @@ class MemoryClearCommand:
             include_experiences=self.include_experiences,
             include_skills=self.include_skills,
             include_failure_patterns=self.include_failure_patterns,
+            include_review_items=self.include_review_items,
         )
         if self.include_session and clear_session is not None:
             clear_session()
@@ -102,6 +108,7 @@ class MemoryRepositories:
     experience: Any
     skill: Any
     failure_pattern: Any
+    review_queue: Any
     domain_graph: Any
 
     def count(self) -> MemoryRepositoryCounts:
@@ -113,6 +120,7 @@ class MemoryRepositories:
             experiences=_repo_count(self.experience),
             skills=_repo_count(self.skill),
             failure_patterns=_repo_count(self.failure_pattern),
+            review_items=_repo_count(self.review_queue),
             domain_nodes=_repo_count(self.domain_graph),
             domain_links=_repo_link_count(self.domain_graph),
         )
@@ -127,6 +135,7 @@ class MemoryRepositories:
         include_experiences: bool = True,
         include_skills: bool = True,
         include_failure_patterns: bool = True,
+        include_review_items: bool = True,
     ) -> None:
         if include_vectors:
             _repo_clear(self.vector)
@@ -142,6 +151,8 @@ class MemoryRepositories:
             _repo_clear(self.skill)
         if include_failure_patterns:
             _repo_clear(self.failure_pattern)
+        if include_review_items:
+            _repo_clear(self.review_queue)
 
     def stats(self) -> dict[str, int | None]:
         return self.count().__dict__
@@ -157,6 +168,7 @@ def build_memory_repositories(
     experience_repo: Any | None = None,
     skill_repo: Any | None = None,
     failure_pattern_repo: Any | None = None,
+    review_queue_repo: Any | None = None,
     domain_graph_repo: Any | None = None,
 ) -> MemoryRepositories:
     return MemoryRepositories(
@@ -167,6 +179,7 @@ def build_memory_repositories(
         experience=experience_repo or ExperienceRepo(),
         skill=skill_repo or SkillRepo(),
         failure_pattern=failure_pattern_repo or FailurePatternRepo(),
+        review_queue=review_queue_repo or ReviewQueueRepo(),
         domain_graph=domain_graph_repo or DomainGraphRepo(),
     )
 

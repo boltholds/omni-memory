@@ -154,6 +154,21 @@ class FailurePatternRecord(BaseModel):
     meta: Dict[str, Any] = Field(default_factory=dict)
 
 
+class ReviewItem(BaseModel):
+    id: str
+    kind: Literal["decision", "skill", "failure_pattern", "writeback_item"]
+    title: str
+    payload: Dict[str, Any]
+    status: Literal["proposed", "accepted", "rejected", "superseded"] = "proposed"
+    confidence: float = 0.5
+    reason: str = ""
+    superseded_by: Optional[str] = None
+    reviewed_by: Optional[str] = None
+    reviewed_at: Optional[float] = None
+    provenance: Provenance = Field(default_factory=Provenance)
+    meta: Dict[str, Any] = Field(default_factory=dict)
+
+
 class RetrievalBundle(BaseModel):
     semantic_chunks: List[MemoryObject] = Field(default_factory=list)
     facts: List[Fact] = Field(default_factory=list)

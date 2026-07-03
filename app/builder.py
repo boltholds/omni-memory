@@ -12,6 +12,7 @@ from infra.repo.episodic_repo import EpisodicRepo
 from infra.repo.decision_repo import DecisionRepo
 from infra.repo.experience_repo import ExperienceRepo
 from infra.repo.cognitive_repo import FailurePatternRepo, SkillRepo
+from infra.repo.review_repo import ReviewQueueRepo
 
 
 def build_memory(
@@ -29,6 +30,7 @@ def build_memory(
     experience_repo: ExperienceRepo | None = None,
     skill_repo: SkillRepo | None = None,
     failure_pattern_repo: FailurePatternRepo | None = None,
+    review_queue_repo: ReviewQueueRepo | None = None,
     fact_extractor: FactExtractor | None = None,
     experience_evaluator: ExperienceEvaluator | None = None,
 ) -> OmniMemory:
@@ -63,6 +65,7 @@ def build_memory(
         experience_repo=experience_repo,
         skill_repo=skill_repo,
         failure_pattern_repo=failure_pattern_repo,
+        review_queue_repo=review_queue_repo,
         fact_extractor=fact_extractor,
         experience_evaluator=experience_evaluator,
     )

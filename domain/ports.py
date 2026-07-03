@@ -11,6 +11,7 @@ from .models import (
     FailurePatternRecord,
     MemoryObject,
     RetrievalBundle,
+    ReviewItem,
     SkillRecord,
 )
 
@@ -73,6 +74,16 @@ class IFailurePatternRepository(ABC):
     def list_failure_patterns(self, limit: int | None = None) -> List[FailurePatternRecord]: ...
     @abstractmethod
     def search(self, text: str, k: int = 5) -> List[FailurePatternRecord]: ...
+
+class IReviewQueueRepository(ABC):
+    @abstractmethod
+    def save_review_item(self, item: ReviewItem) -> None: ...
+    @abstractmethod
+    def get_review_item(self, item_id: str) -> ReviewItem | None: ...
+    @abstractmethod
+    def list_review_items(self, status: str | None = None, kind: str | None = None, limit: int | None = None) -> List[ReviewItem]: ...
+    @abstractmethod
+    def count(self) -> int: ...
 
 class IConsistencyEngine(ABC):
     @abstractmethod

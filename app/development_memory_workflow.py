@@ -65,7 +65,10 @@ class DevelopmentMemoryWorkflow:
             if parsed.distill_dry_run:
                 advisories.append("distillation_dry_run")
 
-        decision_candidates = draft_decision_candidates(parsed, llm=getattr(self.memory, "llm", None))
+        decision_candidates = self._queue_decision_candidates(
+            draft_decision_candidates(parsed, llm=getattr(self.memory, "llm", None)),
+            source=parsed.source,
+        )
         if decision_candidates:
             advisories.append("decision_candidates_review")
 
@@ -98,6 +101,39 @@ class DevelopmentMemoryWorkflow:
             decision_candidates=decision_candidates,
             advisories=advisories,
         )
+
+    def _queue_decision_candidates(
+        self,
+        candidates: list[DecisionCandidate],
+        *,
+        source: str,
+    ) -> list[DecisionCandidate]:
+        out: list[DecisionCandidate] = []
+        for candidate in candidates:
+            review_item = self.memory.submit_review_item(
+                kind="decision",
+                title=candidate.title,
+                payload=candidate.model_dump(mode="json"),
+                confidence=candidate.confidence,
+                reason=candidate.reason,
+                source=source,
+                meta={
+                    **dict(candidate.meta or {}),
+                    "queued_from": "development_memory_workflow",
+                },
+            )
+            out.append(
+                candidate.model_copy(
+                    update={
+                        "meta": {
+                            **dict(candidate.meta or {}),
+                            "review_item_id": review_item.id,
+                            "queued_from": "development_memory_workflow",
+                        }
+                    }
+                )
+            )
+        return out
 
     def _distill(self, request: FinishDevelopmentTaskRequest) -> WritebackResult:
         original_turns = list(getattr(self.memory, "_session_turns", []))

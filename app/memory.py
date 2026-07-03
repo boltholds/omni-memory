@@ -27,9 +27,10 @@ from app.memory_commands import (
 from app.memory_repositories import MemoryClearCommand, MemoryClearReport, MemoryRepositories, build_memory_repositories
 from app.ops_cycle import OpsCycleDraft
 from app.ops_memory_workflow import OpsMemoryWorkflow
+from app.review_queue import ReviewActionResult, ReviewQueueService
 from domain.distiller import ISessionMemoryDistiller, SessionTurn
 from domain.experience_evaluator import ExperienceEvaluator
-from domain.models import ContextPack, ConflictReport, DecisionRecord, ExperienceRecord, RetrievalBundle, WriteReport
+from domain.models import ContextPack, ConflictReport, DecisionRecord, ExperienceRecord, RetrievalBundle, ReviewItem, WriteReport
 from domain.model_ports import IEmbedder, ModelBundle
 from domain.policy import MemoryPolicy
 from domain.repositories import IFactRepo
@@ -42,6 +43,7 @@ from infra.repo.decision_repo import DecisionRepo
 from infra.repo.episodic_repo import EpisodicRepo
 from infra.repo.experience_repo import ExperienceRepo
 from infra.repo.cognitive_repo import FailurePatternRepo, SkillRepo
+from infra.repo.review_repo import ReviewQueueRepo
 from infra.repo.vector_repo import VectorStoreRepo
 from app.writeback.memory_policies import ConfidenceConfig, ConfidencePolicy, ConflictPolicy, DedupPolicy, PiiPolicy, ProvenancePolicy, TTLConfig, TTLPolicy
 from app.writeback.service import MemoryRepositoryRouter, WriteBackService
@@ -114,6 +116,7 @@ class OmniMemory:
         experience_repo: ExperienceRepo | None = None,
         skill_repo: SkillRepo | None = None,
         failure_pattern_repo: FailurePatternRepo | None = None,
+        review_queue_repo: ReviewQueueRepo | None = None,
         reject_conflicts: bool = False,
         llm: Any | None = None,
         embedder: IEmbedder | None = None,
@@ -135,6 +138,7 @@ class OmniMemory:
             experience_repo=experience_repo,
             skill_repo=skill_repo,
             failure_pattern_repo=failure_pattern_repo,
+            review_queue_repo=review_queue_repo,
         )
         self.vector_repo = self.repositories.vector
         self.graph_repo = self.repositories.graph
@@ -143,6 +147,7 @@ class OmniMemory:
         self.experience_repo = self.repositories.experience
         self.skill_repo = self.repositories.skill
         self.failure_pattern_repo = self.repositories.failure_pattern
+        self.review_queue_repo = self.repositories.review_queue
         self.domain_graph_repo = self.repositories.domain_graph
         self.reranker = bundle.reranker
 
@@ -169,6 +174,7 @@ class OmniMemory:
         self.development_cycle_recorder = DevelopmentCycleRecorder()
         self.development_memory_workflow = DevelopmentMemoryWorkflow(self)
         self.ops_memory_workflow = OpsMemoryWorkflow(self)
+        self.review_queue = ReviewQueueService(repo=self.repositories.review_queue, memory=self)
         self.writeback_service = build_writeback_service(repositories=self.repositories, reject_conflicts=reject_conflicts)
         self._session_turns: list[SessionTurn] = []
         self.prompt_renderer = PromptRenderer()
@@ -273,14 +279,32 @@ class OmniMemory:
     def consolidate_experiences(self, *, dry_run: bool = True, min_confidence: float = 0.85) -> ConsolidationResult:
         return self.consolidator.consolidate(dry_run=dry_run, min_confidence=min_confidence)
 
+    def submit_review_item(self, *, kind: str, title: str, payload: dict[str, Any], confidence: float = 0.5, reason: str = "", source: str = "review-queue", meta: dict[str, Any] | None = None) -> ReviewItem:
+        return self.review_queue.submit(kind=kind, title=title, payload=payload, confidence=confidence, reason=reason, source=source, meta=meta)
+
+    def list_review_items(self, *, status: str | None = None, kind: str | None = None, limit: int | None = None) -> list[ReviewItem]:
+        return self.review_queue.list(status=status, kind=kind, limit=limit)
+
+    def get_review_item(self, item_id: str) -> ReviewItem | None:
+        return self.review_queue.get(item_id)
+
+    def accept_review_item(self, item_id: str, *, reviewer: str = "user", note: str = "") -> ReviewActionResult:
+        return self.review_queue.accept(item_id, reviewer=reviewer, note=note)
+
+    def reject_review_item(self, item_id: str, *, reviewer: str = "user", note: str = "") -> ReviewActionResult:
+        return self.review_queue.reject(item_id, reviewer=reviewer, note=note)
+
+    def supersede_review_item(self, item_id: str, *, replacement: dict[str, Any], reviewer: str = "user", note: str = "") -> ReviewActionResult:
+        return self.review_queue.supersede(item_id, replacement=replacement, reviewer=reviewer, note=note)
+
     def ingest_turn(self, role: str, content: str) -> None:
         self._session_turns.append(SessionTurn(role=role, content=content))
 
     def clear_session(self) -> None:
         self._session_turns.clear()
 
-    def clear(self, *, include_vectors: bool = True, include_facts: bool = True, include_episodes: bool = True, include_decisions: bool = True, include_experiences: bool = True, include_skills: bool = True, include_failure_patterns: bool = True, include_session: bool = True, dry_run: bool = False) -> MemoryClearReport:
-        command = MemoryClearCommand(include_vectors=include_vectors, include_facts=include_facts, include_episodes=include_episodes, include_decisions=include_decisions, include_experiences=include_experiences, include_skills=include_skills, include_failure_patterns=include_failure_patterns, include_session=include_session, dry_run=dry_run)
+    def clear(self, *, include_vectors: bool = True, include_facts: bool = True, include_episodes: bool = True, include_decisions: bool = True, include_experiences: bool = True, include_skills: bool = True, include_failure_patterns: bool = True, include_review_items: bool = True, include_session: bool = True, dry_run: bool = False) -> MemoryClearReport:
+        command = MemoryClearCommand(include_vectors=include_vectors, include_facts=include_facts, include_episodes=include_episodes, include_decisions=include_decisions, include_experiences=include_experiences, include_skills=include_skills, include_failure_patterns=include_failure_patterns, include_review_items=include_review_items, include_session=include_session, dry_run=dry_run)
         return command.execute(self.repositories, session_turns=len(self._session_turns), clear_session=self.clear_session)
 
     def repository_stats(self) -> dict[str, int | None]:

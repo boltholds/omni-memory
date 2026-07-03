@@ -55,6 +55,14 @@ def test_mcp_write_tool_schemas_describe_required_inputs():
     assert {"dry_run", "min_confidence", "clear", "meta"} <= set(session_commit["properties"])
 
 
+def test_mcp_advertised_tools_are_callable():
+    advertised = {tool["name"] for tool in MCP_TOOL_SCHEMAS}
+    handlers = build_mcp_handlers(_memory())
+
+    assert advertised == set(handlers)
+    assert all(callable(handler) for handler in handlers.values())
+
+
 def test_mcp_handlers_write_retrieve_context_and_conflicts():
     handlers = build_mcp_handlers(_memory())
 
@@ -102,6 +110,7 @@ def test_mcp_clear_removes_selected_memory_stores():
         "experiences": 0,
         "skills": 0,
         "failure_patterns": 0,
+        "review_items": 0,
         "session_turns": 1,
         "dry_run": True,
     }
@@ -116,6 +125,7 @@ def test_mcp_clear_removes_selected_memory_stores():
         "experiences": 0,
         "skills": 0,
         "failure_patterns": 0,
+        "review_items": 0,
         "session_turns": 1,
         "dry_run": False,
     }
@@ -158,6 +168,7 @@ def test_mcp_clear_preserves_excluded_memory_stores():
         "experiences": 0,
         "skills": 0,
         "failure_patterns": 0,
+        "review_items": 0,
         "session_turns": 1,
         "dry_run": False,
     }

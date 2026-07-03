@@ -162,6 +162,30 @@ def build_mcp_app(memory: OmniMemory) -> FastMCP:
     def record_ops_cycle(goal: str, service: str, lesson: str, alert_id: str | None = None, symptoms: list[str] | None = None, actions: list[str] | None = None, outcome: str = "", metrics_before: dict[str, float] | None = None, metrics_after: dict[str, float] | None = None, reuse_when: list[str] | None = None, avoid_when: list[str] | None = None, affected_resources: list[str] | None = None, confidence: float = 0.8, source: str = "mcp-ops-cycle", meta: dict[str, Any] | None = None) -> str:
         return call("omni_memory_record_ops_cycle", goal=goal, service=service, alert_id=alert_id, symptoms=symptoms or [], actions=actions or [], outcome=outcome, metrics_before=metrics_before or {}, metrics_after=metrics_after or {}, lesson=lesson, reuse_when=reuse_when or [], avoid_when=avoid_when or [], affected_resources=affected_resources or [], confidence=confidence, source=source, meta=meta or {})
 
+    @server.tool(name="omni_memory_submit_review_item", description="Submit a cognitive memory proposal to the review queue.", structured_output=False)
+    def submit_review_item(kind: str, title: str, payload: dict[str, Any], confidence: float = 0.5, reason: str = "", source: str = "mcp-review", meta: dict[str, Any] | None = None) -> str:
+        return call("omni_memory_submit_review_item", kind=kind, title=title, payload=payload, confidence=confidence, reason=reason, source=source, meta=meta or {})
+
+    @server.tool(name="omni_memory_list_review_items", description="List cognitive memory proposals waiting for review.", structured_output=False)
+    def list_review_items(status: str | None = None, kind: str | None = None, limit: int | None = None) -> str:
+        return call("omni_memory_list_review_items", status=status, kind=kind, limit=limit)
+
+    @server.tool(name="omni_memory_get_review_item", description="Get a cognitive memory proposal by review item id.", structured_output=False)
+    def get_review_item(item_id: str) -> str:
+        return call("omni_memory_get_review_item", item_id=item_id)
+
+    @server.tool(name="omni_memory_accept_review_item", description="Accept a cognitive memory proposal and apply it.", structured_output=False)
+    def accept_review_item(item_id: str, reviewer: str = "mcp", note: str = "") -> str:
+        return call("omni_memory_accept_review_item", item_id=item_id, reviewer=reviewer, note=note)
+
+    @server.tool(name="omni_memory_reject_review_item", description="Reject a cognitive memory proposal without applying it.", structured_output=False)
+    def reject_review_item(item_id: str, reviewer: str = "mcp", note: str = "") -> str:
+        return call("omni_memory_reject_review_item", item_id=item_id, reviewer=reviewer, note=note)
+
+    @server.tool(name="omni_memory_supersede_review_item", description="Supersede a cognitive memory proposal with a replacement proposal.", structured_output=False)
+    def supersede_review_item(item_id: str, replacement: dict[str, Any], reviewer: str = "mcp", note: str = "") -> str:
+        return call("omni_memory_supersede_review_item", item_id=item_id, replacement=replacement, reviewer=reviewer, note=note)
+
     @server.tool(name="omni_memory_session_ingest_turn", description="Append a turn to the in-process session buffer before session distillation.", structured_output=False)
     def session_ingest_turn(role: str, content: str) -> str:
         return call("omni_memory_session_ingest_turn", role=role, content=content)
@@ -175,8 +199,8 @@ def build_mcp_app(memory: OmniMemory) -> FastMCP:
         return call("omni_memory_session_clear")
 
     @server.tool(name="omni_memory_clear", description="Clear durable OmniMemory stores and/or the in-process session buffer.", structured_output=False)
-    def clear(include_vectors: bool = True, include_facts: bool = True, include_episodes: bool = True, include_decisions: bool = True, include_experiences: bool = True, include_skills: bool = True, include_failure_patterns: bool = True, include_session: bool = True, dry_run: bool = False) -> str:
-        return call("omni_memory_clear", include_vectors=include_vectors, include_facts=include_facts, include_episodes=include_episodes, include_decisions=include_decisions, include_experiences=include_experiences, include_skills=include_skills, include_failure_patterns=include_failure_patterns, include_session=include_session, dry_run=dry_run)
+    def clear(include_vectors: bool = True, include_facts: bool = True, include_episodes: bool = True, include_decisions: bool = True, include_experiences: bool = True, include_skills: bool = True, include_failure_patterns: bool = True, include_review_items: bool = True, include_session: bool = True, dry_run: bool = False) -> str:
+        return call("omni_memory_clear", include_vectors=include_vectors, include_facts=include_facts, include_episodes=include_episodes, include_decisions=include_decisions, include_experiences=include_experiences, include_skills=include_skills, include_failure_patterns=include_failure_patterns, include_review_items=include_review_items, include_session=include_session, dry_run=dry_run)
 
     @server.tool(name="omni_memory_stats", description="Return lightweight repository counts for the local OmniMemory instance.", structured_output=False)
     def stats() -> str:

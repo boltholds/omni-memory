@@ -167,6 +167,7 @@ def _local_memory(
     from infra.repo.persistent_fact_repo import PersistentFactRepo
     from infra.repo.decision_repo import DecisionRepo, PersistentDecisionRepo
     from infra.repo.experience_repo import ExperienceRepo, PersistentExperienceRepo
+    from infra.repo.review_repo import PersistentReviewQueueRepo, ReviewQueueRepo
     from infra.repo.cognitive_repo import (
         FailurePatternRepo,
         PersistentFailurePatternRepo,
@@ -220,6 +221,11 @@ def _local_memory(
         path=memory_dir / "failure_patterns.json",
     )
 
+    review_queue_repo = PersistentReviewQueueRepo(
+        inner=ReviewQueueRepo(),
+        path=memory_dir / "review_queue.json",
+    )
+
     vector_dir = (
         memory_dir
         / "vector"
@@ -243,6 +249,7 @@ def _local_memory(
         experience_repo=experience_repo,
         skill_repo=skill_repo,
         failure_pattern_repo=failure_pattern_repo,
+        review_queue_repo=review_queue_repo,
     )
 
 
