@@ -138,7 +138,8 @@ def test_consolidation_dry_run_proposes_skill_without_writing():
             lesson="Prefer removing unnecessary dependency before adding a heavy package.",
             reuse_when=["CI fails during collection", "missing package import"],
             confidence=0.92,
-            source="test",
+            source="codex-dev",
+            meta={"domain_ids": ["domain:project:omni-memory", "domain:area:ci"]},
         )
 
     result = handlers["omni_memory_consolidate_experiences"](dry_run=True, min_confidence=0.85)
@@ -162,7 +163,8 @@ def test_consolidation_apply_saves_skill_and_failure_pattern_for_context():
             lesson="Prefer removing unnecessary dependency before adding a heavy package.",
             reuse_when=["CI fails during collection", "missing package import"],
             confidence=0.92,
-            source="test",
+            source="codex-dev",
+            meta={"domain_ids": ["domain:project:omni-memory", "domain:area:ci"]},
         )
 
     handlers["omni_memory_write_experience"](
@@ -175,7 +177,8 @@ def test_consolidation_apply_saves_skill_and_failure_pattern_for_context():
         lesson="Blindly adding dependencies can create CI regressions.",
         reuse_when=["CI fails during collection", "missing package import"],
         confidence=0.91,
-        source="test",
+        source="codex-dev",
+        meta={"domain_ids": ["domain:project:omni-memory", "domain:area:ci"]},
     )
 
     applied = handlers["omni_memory_consolidate_experiences"](dry_run=False, min_confidence=0.85)
