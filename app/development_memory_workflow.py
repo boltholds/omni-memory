@@ -65,7 +65,7 @@ class DevelopmentMemoryWorkflow:
             if parsed.distill_dry_run:
                 advisories.append("distillation_dry_run")
 
-        decision_candidates = draft_decision_candidates(parsed)
+        decision_candidates = draft_decision_candidates(parsed, llm=getattr(self.memory, "llm", None))
         if decision_candidates:
             advisories.append("decision_candidates_review")
 
