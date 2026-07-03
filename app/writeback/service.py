@@ -1,6 +1,14 @@
 from typing import Any, Optional, Protocol, runtime_checkable
 
-from domain.models import Fact, Episode, MemoryObject, DecisionRecord, ExperienceRecord
+from domain.models import (
+    DecisionRecord,
+    Episode,
+    ExperienceRecord,
+    Fact,
+    FailurePatternRecord,
+    MemoryObject,
+    SkillRecord,
+)
 from domain.operations import MemoryOperation, PolicyDecision
 
 from domain.writeback import (
@@ -15,15 +23,16 @@ from domain.writeback import (
     get_memory_kind,
 )
 
-
 from domain.ports import IMemoryWriteRepository
 from app.writeback.writeback_policies import (
-    FactWritebackPolicy,
-    EpisodeWritebackPolicy,
-    PreferenceWritebackPolicy,
     DecisionWritebackPolicy,
+    EpisodeWritebackPolicy,
     ExperienceWritebackPolicy,
+    FactWritebackPolicy,
+    FailurePatternWritebackPolicy,
     NoteWritebackPolicy,
+    PreferenceWritebackPolicy,
+    SkillWritebackPolicy,
     WritebackPolicyResolver,
 )
 
@@ -72,14 +81,19 @@ class ExperienceMemoryRepository(Protocol):
         ...
 
 
+@runtime_checkable
+class SkillMemoryRepository(Protocol):
+    def save_skill(self, skill: SkillRecord) -> None:
+        ...
+
+
+@runtime_checkable
+class FailurePatternMemoryRepository(Protocol):
+    def save_failure_pattern(self, pattern: FailurePatternRecord) -> None:
+        ...
+
+
 class MemoryRepositoryRouter:
-    """
-    Роутер сохранения доменных memory objects.
-
-    Он убирает из WriteBackService знание о том,
-    какой объект в какой репозиторий сохраняется.
-    """
-
     def __init__(
         self,
         *,
@@ -88,12 +102,16 @@ class MemoryRepositoryRouter:
         episodic_repo: EpisodicMemoryRepository,
         decision_repo: DecisionMemoryRepository | None = None,
         experience_repo: ExperienceMemoryRepository | None = None,
+        skill_repo: SkillMemoryRepository | None = None,
+        failure_pattern_repo: FailurePatternMemoryRepository | None = None,
     ) -> None:
         self.vector_repo = vector_repo
         self.graph_repo = graph_repo
         self.episodic_repo = episodic_repo
         self.decision_repo = decision_repo
         self.experience_repo = experience_repo
+        self.skill_repo = skill_repo
+        self.failure_pattern_repo = failure_pattern_repo
 
     def save(self, memory_object: DomainMemoryObject) -> None:
         if isinstance(memory_object, Fact):
@@ -116,13 +134,23 @@ class MemoryRepositoryRouter:
             self.experience_repo.save_experience(memory_object)
             return
 
+        if isinstance(memory_object, SkillRecord):
+            if self.skill_repo is None:
+                raise TypeError("Skill repository is not configured")
+            self.skill_repo.save_skill(memory_object)
+            return
+
+        if isinstance(memory_object, FailurePatternRecord):
+            if self.failure_pattern_repo is None:
+                raise TypeError("Failure pattern repository is not configured")
+            self.failure_pattern_repo.save_failure_pattern(memory_object)
+            return
+
         if isinstance(memory_object, MemoryObject):
             self.vector_repo.save_object(memory_object)
             return
 
-        raise TypeError(
-            f"Unsupported memory object type: {type(memory_object).__name__}"
-        )
+        raise TypeError(f"Unsupported memory object type: {type(memory_object).__name__}")
 
 
 def _raw_item_id(item: WritebackRawItem) -> str:
@@ -144,13 +172,6 @@ def _apply_request_source_if_implicit(
     item: WritebackRawItem,
     request_source: str | None,
 ) -> DomainMemoryObject:
-    """Use batch/request source when the raw item did not provide provenance.
-
-    Domain models default Provenance.source to "user". Without this normalization,
-    API calls with source="demo" still end up with provenance.source="user" even
-    though the caller supplied a more precise batch source.
-    """
-
     if item.provenance is not None or not request_source:
         return memory_object
 
@@ -225,7 +246,9 @@ class WriteBackService:
                     PreferenceWritebackPolicy(),
                     DecisionWritebackPolicy(),
                     ExperienceWritebackPolicy(),
-                    NoteWritebackPolicy(),  # always in the end, because she is fallback
+                    SkillWritebackPolicy(),
+                    FailurePatternWritebackPolicy(),
+                    NoteWritebackPolicy(),
                 ]
             )
         self._write_policies = write_policies if write_policies else  [
@@ -250,6 +273,8 @@ class WriteBackService:
             episodic_repo=self._repository_router.episodic_repo,
             decision_repo=self._repository_router.decision_repo,
             experience_repo=self._repository_router.experience_repo,
+            skill_repo=self._repository_router.skill_repo,
+            failure_pattern_repo=self._repository_router.failure_pattern_repo,
         )
 
         for item in request.items:
@@ -411,7 +436,6 @@ class WriteBackService:
 
         return result
 
-    # for legacy support
     def write_raw(self, raw_items: list[dict[str, Any]]) -> WritebackResult:
         request = WritebackRequest.model_validate({"items": raw_items})
         return self.write(request)
