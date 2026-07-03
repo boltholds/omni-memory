@@ -37,12 +37,38 @@ def test_domain_experience_evaluator_routes_by_experience_domain():
 
     assert result.success_score == 0.9
     assert result.recommended_memory_type == "skill"
+    assert result.meta["routed_domain"] == "ops"
+    assert result.meta["evaluator"] == "OpsLikeEvaluator"
     assert "ops" in result.consolidation_tags
 
 
-def test_consolidation_uses_evaluator_for_non_textual_validation_success():
-    memory = build_memory(use_llm=False, embedder=HashEmbedder())
-    memory.consolidator.evaluator = DomainExperienceEvaluator(evaluators={"ops": OpsLikeEvaluator()})
+def test_domain_experience_evaluator_registers_development_by_default():
+    evaluator = DomainExperienceEvaluator()
+    experience = ExperienceRecord(
+        id="exp-dev",
+        goal="Fix CI dependency issue",
+        outcome="pytest passed after fix",
+        evaluation={"tests": "passed"},
+        lesson="Remove unnecessary dependency before adding packages.",
+        reuse_when=["CI dependency issue"],
+        confidence=0.9,
+        meta={"domain": "development"},
+    )
+
+    result = evaluator.evaluate(experience)
+
+    assert result.recommended_memory_type == "skill"
+    assert result.meta["routed_domain"] == "development"
+    assert result.meta["evaluator"] == "DevelopmentExperienceEvaluator"
+    assert "development" in result.consolidation_tags
+
+
+def test_consolidation_uses_injected_evaluator_from_memory_builder():
+    memory = build_memory(
+        use_llm=False,
+        embedder=HashEmbedder(),
+        experience_evaluator=DomainExperienceEvaluator(evaluators={"ops": OpsLikeEvaluator()}),
+    )
 
     for suffix in ["one", "two"]:
         memory.record_experience(
