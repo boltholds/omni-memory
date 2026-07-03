@@ -40,6 +40,16 @@ class MemoryContextIn(BaseModel):
     scope: dict[str, Any] = Field(default_factory=dict)
 
 
+class FactMineIn(BaseModel):
+    text: str
+    source: str = "api-fact-mining"
+    dry_run: bool = True
+    min_confidence: float = Field(default=0.75, ge=0.0, le=1.0)
+    policy_mode: PolicyMode = "review"
+    domain_ids: list[str] = Field(default_factory=list)
+    meta: dict[str, Any] = Field(default_factory=dict)
+
+
 def build_v1_router(memory, orchestrator) -> APIRouter:
     router = APIRouter(prefix="/v1", tags=["v1-memory"])
     audit_repo = build_audit_repository()
@@ -105,6 +115,36 @@ def build_v1_router(memory, orchestrator) -> APIRouter:
             "persisted": persisted,
             "error": persistence_error,
         }
+        return payload
+
+    @router.post("/facts/mine")
+    def mine_facts(inp: FactMineIn):
+        """Extract evidence-grounded fact candidates. Dry-run by default."""
+        result = memory.mine_facts(
+            inp.text,
+            source=inp.source,
+            dry_run=inp.dry_run,
+            min_confidence=inp.min_confidence,
+            policy_mode=inp.policy_mode,
+            domain_ids=inp.domain_ids,
+            meta=inp.meta,
+        )
+        persisted = False
+        persistence_error = None
+        if audit_repo is not None and result.writeback.operations:
+            try:
+                audit_repo.save_writeback_result(result.writeback)
+                persisted = True
+            except Exception as exc:
+                persistence_error = f"{type(exc).__name__}: {exc}"
+        payload = result.model_dump(mode="json")
+        payload["audit_persistence"] = {
+            **audit_status(),
+            "persisted": persisted,
+            "error": persistence_error,
+        }
+        metrics.inc("v1_fact_mining_calls", 1)
+        metrics.inc("fact_mining_candidates", result.candidate_count)
         return payload
 
     @router.post("/memories/search")
