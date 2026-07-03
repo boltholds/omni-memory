@@ -38,6 +38,10 @@ def build_mcp_app(memory: OmniMemory) -> FastMCP:
     def detect_conflicts(query: str | None = None, facts: list[dict[str, Any]] | None = None, scope: dict[str, Any] | None = None) -> str:
         return call("omni_memory_detect_conflicts", query=query, facts=facts, scope=scope or {})
 
+    @server.tool(name="omni_memory_mine_facts", description="Extract evidence-grounded fact candidates. Dry-run by default.", structured_output=False)
+    def mine_facts(text: str, source: str = "mcp-fact-mining", dry_run: bool = True, min_confidence: float = 0.75, policy_mode: str = "review", domain_ids: list[str] | None = None, meta: dict[str, Any] | None = None) -> str:
+        return call("omni_memory_mine_facts", text=text, source=source, dry_run=dry_run, min_confidence=min_confidence, policy_mode=policy_mode, domain_ids=domain_ids or [], meta=meta or {})
+
     @server.tool(name="omni_memory_write_fact", description="Save a single structured fact.", structured_output=False)
     def write_fact(subject: str, predicate: str, object: str, source: str = "mcp", confidence: float = 1.0) -> str:
         return call("omni_memory_write_fact", subject=subject, predicate=predicate, object=object, source=source, confidence=confidence)
