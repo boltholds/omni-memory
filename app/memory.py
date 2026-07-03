@@ -10,6 +10,7 @@ from infra.embeddings import build_embedder
 from .orchestrator import Orchestrator
 from .prompting import PromptRenderer
 from .retriever import Retriever
+from app.fact_maintenance import FactMaintenanceCommand, FactMaintenanceResult, FactMaintenanceService
 
 from domain.distiller import IMemoryDistiller, SessionTurn
 from domain.models import ContextPack, ConflictReport, RetrievalBundle, WriteReport
@@ -158,6 +159,7 @@ class OmniMemory:
         )
         self.consistency = SimpleConsistencyEngine()
         self.orchestrator = Orchestrator(self.retriever, self.consistency)
+        self.fact_maintenance = FactMaintenanceService(self.graph_repo)
         self.writeback_service = build_writeback_service(
             vector_repo=self.vector_repo,
             graph_repo=self.graph_repo,
@@ -350,6 +352,12 @@ class OmniMemory:
     def detect_conflicts(self, query: str | None = None) -> ConflictReport:
         bundle = self.orchestrator.plan_retrieval(query or "")
         return self.consistency.detect_conflicts(bundle.facts)
+
+    def maintain_facts(
+        self,
+        command: FactMaintenanceCommand | dict[str, Any],
+    ) -> FactMaintenanceResult:
+        return self.fact_maintenance.execute(command)
 
     def ask(
         self,

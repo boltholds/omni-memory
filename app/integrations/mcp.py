@@ -83,6 +83,85 @@ MCP_TOOL_SCHEMAS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "omni_memory_list_facts",
+        "description": "List stored facts with optional filters.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "subject": {"type": "string"},
+                "predicate": {"type": "string"},
+                "object": {"type": "string"},
+                "status": {"type": "string"},
+                "limit": {"type": "integer"},
+            },
+        },
+    },
+    {
+        "name": "omni_memory_get_fact",
+        "description": "Get a stored fact by id.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"fact_id": {"type": "string"}},
+            "required": ["fact_id"],
+        },
+    },
+    {
+        "name": "omni_memory_patch_fact",
+        "description": "Patch a stored fact in place through fact maintenance strategies.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "fact_id": {"type": "string"},
+                "patch": {"type": "object"},
+                "reason": {"type": "string"},
+                "dry_run": {"type": "boolean", "default": False},
+            },
+            "required": ["fact_id", "patch"],
+        },
+    },
+    {
+        "name": "omni_memory_retract_fact",
+        "description": "Soft-delete a fact by marking it retracted.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "fact_id": {"type": "string"},
+                "reason": {"type": "string"},
+                "dry_run": {"type": "boolean", "default": False},
+            },
+            "required": ["fact_id"],
+        },
+    },
+    {
+        "name": "omni_memory_supersede_fact",
+        "description": "Create a new current fact and mark an old fact historical.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "fact_id": {"type": "string"},
+                "new_fact": {"type": "object"},
+                "reason": {"type": "string"},
+                "source": {"type": "string", "default": "mcp"},
+                "dry_run": {"type": "boolean", "default": False},
+            },
+            "required": ["fact_id", "new_fact"],
+        },
+    },
+    {
+        "name": "omni_memory_delete_fact",
+        "description": "Delete a fact. Soft delete by default; hard=true removes storage record.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "fact_id": {"type": "string"},
+                "hard": {"type": "boolean", "default": False},
+                "reason": {"type": "string"},
+                "dry_run": {"type": "boolean", "default": False},
+            },
+            "required": ["fact_id"],
+        },
+    },
+    {
         "name": "omni_memory_write_note",
         "description": "Save a semantic note.",
         "inputSchema": {
@@ -189,6 +268,54 @@ def build_mcp_handlers(memory: OmniMemory) -> dict[str, Callable[..., Any]]:
             source=kwargs.get("source", "mcp"),
             confidence=kwargs.get("confidence", 1.0),
         ).model_dump(),
+        "omni_memory_list_facts": lambda **kwargs: memory.maintain_facts(
+            {
+                "operation": "list",
+                "subject": kwargs.get("subject"),
+                "predicate": kwargs.get("predicate"),
+                "object": kwargs.get("object"),
+                "status": kwargs.get("status"),
+                "limit": kwargs.get("limit"),
+            }
+        ).model_dump(mode="json"),
+        "omni_memory_get_fact": lambda **kwargs: memory.maintain_facts(
+            {"operation": "get", "fact_id": kwargs["fact_id"]}
+        ).model_dump(mode="json"),
+        "omni_memory_patch_fact": lambda **kwargs: memory.maintain_facts(
+            {
+                "operation": "patch",
+                "fact_id": kwargs["fact_id"],
+                "patch": kwargs.get("patch") or {},
+                "reason": kwargs.get("reason"),
+                "dry_run": kwargs.get("dry_run", False),
+            }
+        ).model_dump(mode="json"),
+        "omni_memory_retract_fact": lambda **kwargs: memory.maintain_facts(
+            {
+                "operation": "retract",
+                "fact_id": kwargs["fact_id"],
+                "reason": kwargs.get("reason"),
+                "dry_run": kwargs.get("dry_run", False),
+            }
+        ).model_dump(mode="json"),
+        "omni_memory_supersede_fact": lambda **kwargs: memory.maintain_facts(
+            {
+                "operation": "supersede",
+                "fact_id": kwargs["fact_id"],
+                "new_fact": kwargs.get("new_fact") or {},
+                "reason": kwargs.get("reason"),
+                "source": kwargs.get("source", "mcp"),
+                "dry_run": kwargs.get("dry_run", False),
+            }
+        ).model_dump(mode="json"),
+        "omni_memory_delete_fact": lambda **kwargs: memory.maintain_facts(
+            {
+                "operation": "hard_delete" if kwargs.get("hard", False) else "retract",
+                "fact_id": kwargs["fact_id"],
+                "reason": kwargs.get("reason"),
+                "dry_run": kwargs.get("dry_run", False),
+            }
+        ).model_dump(mode="json"),
         "omni_memory_write_note": lambda **kwargs: memory.write_note(
             kwargs["text"],
             source=kwargs.get("source", "mcp"),

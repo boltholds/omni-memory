@@ -20,6 +20,8 @@ class SimpleConsistencyEngine(IConsistencyEngine):
         # key -> set(objects)
         groups: Dict[Tuple[str, str], set[str]] = defaultdict(set)
         for f in facts:
+            if _fact_status(f) in {"historical", "retracted"}:
+                continue
             s = f.subject
             p = f.predicate
             o = f.object
@@ -92,6 +94,8 @@ def build_fact_beliefs(facts: Iterable[Fact], *, as_of: float | None = None) -> 
     groups: dict[tuple[str, str], list[Fact]] = defaultdict(list)
 
     for fact in facts:
+        if _fact_status(fact) == "retracted":
+            continue
         if fact.subject and fact.predicate:
             groups[canonical_fact_key(fact)].append(fact)
 
@@ -99,7 +103,11 @@ def build_fact_beliefs(facts: Iterable[Fact], *, as_of: float | None = None) -> 
 
     for (subject, predicate), group in groups.items():
         scores = score_trust_recent_first(group)
-        valid = [fact for fact in group if _is_valid_at(fact, now)]
+        valid = [
+            fact
+            for fact in group
+            if _is_valid_at(fact, now) and _fact_status(fact) not in {"historical", "retracted"}
+        ]
         ranked_valid = sorted(valid, key=lambda fact: (scores.get(fact.id, 0.0), fact.provenance.time or 0.0), reverse=True)
         current = ranked_valid[0] if ranked_valid else None
         historical = [fact for fact in group if current is None or fact.id != current.id]
@@ -171,6 +179,13 @@ def _is_valid_at(fact: Fact, as_of: float) -> bool:
         return False
 
     return True
+
+
+def _fact_status(fact: Fact) -> str:
+    meta = fact.meta or {}
+    if meta.get("superseded_by"):
+        return "historical"
+    return str(meta.get("status") or "current")
 
 
 def _optional_float(value: Any) -> float | None:

@@ -27,6 +27,10 @@ def test_mcp_tool_schemas_include_core_memory_tools():
     assert "omni_memory_detect_conflicts" in names
     assert "omni_memory_session_commit" in names
     assert "omni_memory_clear" in names
+    assert "omni_memory_list_facts" in names
+    assert "omni_memory_get_fact" in names
+    assert "omni_memory_retract_fact" in names
+    assert "omni_memory_supersede_fact" in names
     assert "omni_memory_stats" in names
 
 
@@ -95,6 +99,83 @@ def test_mcp_clear_removes_selected_memory_stores():
     assert handlers["omni_memory_retrieve"](query="alice lighthouse project")["semantic_chunks"] == []
 
 
+def test_mcp_fact_maintenance_supersedes_without_creating_current_conflict():
+    handlers = build_mcp_handlers(_memory())
+
+    write = handlers["omni_memory_write_items"](
+        items=[
+            {
+                "id": "fact-mcp-old",
+                "type": "fact",
+                "subject": "mcp_server",
+                "predicate": "implemented_with",
+                "object": "minimal json-rpc",
+                "meta": {"confidence": 0.7},
+            }
+        ],
+        source="test",
+    )
+    assert write["saved"] == 1
+
+    supersede = handlers["omni_memory_supersede_fact"](
+        fact_id="fact-mcp-old",
+        new_fact={
+            "id": "fact-mcp-new",
+            "object": "official MCP SDK FastMCP",
+            "meta": {"confidence": 0.99},
+        },
+        reason="Migrated to official MCP SDK",
+        source="test",
+    )
+    assert supersede["applied"] is True
+    assert supersede["fact"]["id"] == "fact-mcp-new"
+
+    old = handlers["omni_memory_get_fact"](fact_id="fact-mcp-old")["fact"]
+    assert old["meta"]["status"] == "historical"
+    assert old["meta"]["superseded_by"] == "fact-mcp-new"
+
+    current = handlers["omni_memory_list_facts"](status="current")["facts"]
+    historical = handlers["omni_memory_list_facts"](status="historical")["facts"]
+    assert [fact["id"] for fact in current] == ["fact-mcp-new"]
+    assert [fact["id"] for fact in historical] == ["fact-mcp-old"]
+
+    all_facts = handlers["omni_memory_list_facts"]()["facts"]
+    conflicts = handlers["omni_memory_detect_conflicts"](facts=all_facts)
+    assert conflicts["conflicts"] == []
+
+    retrieved = handlers["omni_memory_retrieve"](query="mcp_server implementation", k_sem=1)
+    belief = retrieved["beliefs"][0]
+    assert belief["current"]["id"] == "fact-mcp-new"
+    assert [fact["id"] for fact in belief["historical"]] == ["fact-mcp-old"]
+
+
+def test_mcp_fact_maintenance_retracts_fact_from_current_beliefs():
+    handlers = build_mcp_handlers(_memory())
+
+    handlers["omni_memory_write_items"](
+        items=[
+            {
+                "id": "fact-temp",
+                "type": "fact",
+                "subject": "temporary_fact",
+                "predicate": "status",
+                "object": "active",
+            }
+        ],
+        source="test",
+    )
+
+    retracted = handlers["omni_memory_retract_fact"](
+        fact_id="fact-temp",
+        reason="No longer true",
+    )
+    assert retracted["applied"] is True
+    assert retracted["fact"]["meta"]["status"] == "retracted"
+
+    retrieved = handlers["omni_memory_retrieve"](query="temporary_fact status", k_sem=1)
+    assert retrieved["beliefs"] == []
+
+
 @pytest.mark.asyncio
 async def test_mcp_server_lists_and_calls_tools():
     server = build_mcp_app(_memory())
@@ -102,6 +183,7 @@ async def test_mcp_server_lists_and_calls_tools():
     listed = await server.list_tools()
     assert any(tool.name == "omni_memory_stats" for tool in listed)
     assert any(tool.name == "omni_memory_clear" for tool in listed)
+    assert any(tool.name == "omni_memory_supersede_fact" for tool in listed)
 
     called = await server.call_tool("omni_memory_stats", {})
     body = _tool_text(called)

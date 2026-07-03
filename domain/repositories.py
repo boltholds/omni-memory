@@ -9,6 +9,12 @@ class IFactRepo(Protocol):
     def save_fact(self, fact: Fact) -> None:
         ...
 
+    def get_fact(self, fact_id: str) -> Fact | None:
+        ...
+
+    def remove_fact(self, fact_id: str) -> bool:
+        ...
+
     def query(
         self,
         subject: str | None = None,

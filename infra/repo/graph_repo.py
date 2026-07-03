@@ -41,6 +41,11 @@ class GraphRepo(IGraphRepository):
         o = fact.object
         p = fact.predicate
 
+        existing = self._find_edge_by_id(fact.id)
+        if existing is not None and existing[:2] != (s, o):
+            old_s, old_o, old_key = existing
+            self._g.remove_edge(old_s, old_o, key=old_key)
+
         # создаём/обновляем узлы
         if not self._g.has_node(s):
             self._g.add_node(s, type="entity")
@@ -57,6 +62,24 @@ class GraphRepo(IGraphRepository):
         except Exception:
             pass
 
+    def get_fact(self, fact_id: str) -> Fact | None:
+        edge = self._find_edge_by_id(fact_id)
+        if edge is None:
+            return None
+        s, o, key = edge
+        return _edge_to_fact(s, o, key, self._g[s][o][key])
+
+    def remove_fact(self, fact_id: str) -> bool:
+        edge = self._find_edge_by_id(fact_id)
+        if edge is None:
+            return False
+        s, o, key = edge
+        self._g.remove_edge(s, o, key=key)
+        try:
+            GRAPH_FACTS.set(self.count())
+        except Exception:
+            pass
+        return True
 
     @timed("retriever.retrieve", slow_ms=100)
     def query(self, **query_spec: Any) -> List[Fact]:
@@ -101,6 +124,12 @@ class GraphRepo(IGraphRepository):
             pass
         finally:
             return removed
+
+    def _find_edge_by_id(self, fact_id: str) -> tuple[str, str, str] | None:
+        for s, o, key in self._g.edges(keys=True):
+            if key == fact_id:
+                return str(s), str(o), str(key)
+        return None
         
 
 # ----------------- helpers -----------------

@@ -23,6 +23,15 @@ class PersistentFactRepo:
         self.inner.save_fact(fact)
         self._flush()
 
+    def get_fact(self, fact_id: str) -> Fact | None:
+        return self.inner.get_fact(fact_id)
+
+    def remove_fact(self, fact_id: str) -> bool:
+        removed = self.inner.remove_fact(fact_id)
+        if removed:
+            self._flush()
+        return removed
+
     def query(self, **query_spec: Any) -> list[Fact]:
         return self.inner.query(**query_spec)
 

@@ -169,3 +169,5 @@ dmypy.json
 
 # pytype static type analyzer
 .pytype/
+.omni
+.omni-memory/

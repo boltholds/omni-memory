@@ -87,6 +87,111 @@ def build_mcp_app(memory: OmniMemory) -> FastMCP:
         )
 
     @server.tool(
+        name="omni_memory_list_facts",
+        description="List stored facts with optional filters.",
+        structured_output=False,
+    )
+    def list_facts(
+        subject: str | None = None,
+        predicate: str | None = None,
+        object: str | None = None,
+        status: str | None = None,
+        limit: int | None = None,
+    ) -> str:
+        return call(
+            "omni_memory_list_facts",
+            subject=subject,
+            predicate=predicate,
+            object=object,
+            status=status,
+            limit=limit,
+        )
+
+    @server.tool(
+        name="omni_memory_get_fact",
+        description="Get a stored fact by id.",
+        structured_output=False,
+    )
+    def get_fact(fact_id: str) -> str:
+        return call("omni_memory_get_fact", fact_id=fact_id)
+
+    @server.tool(
+        name="omni_memory_patch_fact",
+        description="Patch a stored fact in place through fact maintenance strategies.",
+        structured_output=False,
+    )
+    def patch_fact(
+        fact_id: str,
+        patch: dict[str, Any],
+        reason: str | None = None,
+        dry_run: bool = False,
+    ) -> str:
+        return call(
+            "omni_memory_patch_fact",
+            fact_id=fact_id,
+            patch=patch,
+            reason=reason,
+            dry_run=dry_run,
+        )
+
+    @server.tool(
+        name="omni_memory_retract_fact",
+        description="Soft-delete a fact by marking it retracted.",
+        structured_output=False,
+    )
+    def retract_fact(
+        fact_id: str,
+        reason: str | None = None,
+        dry_run: bool = False,
+    ) -> str:
+        return call(
+            "omni_memory_retract_fact",
+            fact_id=fact_id,
+            reason=reason,
+            dry_run=dry_run,
+        )
+
+    @server.tool(
+        name="omni_memory_supersede_fact",
+        description="Create a new current fact and mark an old fact historical.",
+        structured_output=False,
+    )
+    def supersede_fact(
+        fact_id: str,
+        new_fact: dict[str, Any],
+        reason: str | None = None,
+        source: str = "mcp",
+        dry_run: bool = False,
+    ) -> str:
+        return call(
+            "omni_memory_supersede_fact",
+            fact_id=fact_id,
+            new_fact=new_fact,
+            reason=reason,
+            source=source,
+            dry_run=dry_run,
+        )
+
+    @server.tool(
+        name="omni_memory_delete_fact",
+        description="Delete a fact. Soft delete by default; hard=true removes storage record.",
+        structured_output=False,
+    )
+    def delete_fact(
+        fact_id: str,
+        hard: bool = False,
+        reason: str | None = None,
+        dry_run: bool = False,
+    ) -> str:
+        return call(
+            "omni_memory_delete_fact",
+            fact_id=fact_id,
+            hard=hard,
+            reason=reason,
+            dry_run=dry_run,
+        )
+
+    @server.tool(
         name="omni_memory_write_note",
         description="Save a semantic note.",
         structured_output=False,
