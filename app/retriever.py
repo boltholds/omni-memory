@@ -21,6 +21,26 @@ _MAX_GRAPH_FACTS = 512
 _RERANK_POOL_MULTIPLIER = 4
 _RERANK_POOL_MIN = 16
 _UNSCOPED_DURABLE_PENALTY = 1.25
+_INTENT_PRIORITY_STEP = 0.05
+
+_BUNDLE_SECTION_TYPES: dict[str, tuple[str, str]] = {
+    "facts": ("facts", "fact"),
+    "episodes": ("episodes", "episode"),
+    "decisions": ("decisions", "decision"),
+    "relevant_experience": ("experiences", "experience"),
+    "skills": ("skills", "skill"),
+    "failure_patterns": ("failure_patterns", "failure_pattern"),
+    "semantic_notes": ("semantic_chunks", "note"),
+}
+_DEFAULT_BUNDLE_ORDER: tuple[tuple[str, str], ...] = (
+    ("facts", "fact"),
+    ("episodes", "episode"),
+    ("decisions", "decision"),
+    ("experiences", "experience"),
+    ("skills", "skill"),
+    ("failure_patterns", "failure_pattern"),
+    ("semantic_chunks", "note"),
+)
 
 
 @dataclass(frozen=True)
@@ -171,6 +191,7 @@ class Retriever(IRetriever):
         scope: dict[str, Any] | None = None,
     ) -> RetrievalBundle:
         profile = self._planner.profile(intent, mode=mode)
+        priority_scores = _intent_type_priority_scores(profile)
         raw_ents = self._extractor.extract(query)
         linked_ents = self._linker.link_all(raw_ents)
         ents = _compound_entities(linked_ents)
@@ -187,6 +208,7 @@ class Retriever(IRetriever):
                 scope_filter,
                 memory_type="note",
                 limit=k_sem,
+                type_priority=priority_scores.get("note", 0.0),
             )
             stop_vec()
 
@@ -199,6 +221,7 @@ class Retriever(IRetriever):
                 domain_weights,
                 scope_filter,
                 memory_type="fact",
+                type_priority=priority_scores.get("fact", 0.0),
             )
             stop_kg()
 
@@ -212,6 +235,7 @@ class Retriever(IRetriever):
                 scope_filter,
                 memory_type="episode",
                 limit=k_eps,
+                type_priority=priority_scores.get("episode", 0.0),
             )
             stop_ep()
 
@@ -224,6 +248,7 @@ class Retriever(IRetriever):
                 scope_filter,
                 memory_type="decision",
                 limit=k_eps,
+                type_priority=priority_scores.get("decision", 0.0),
             )
 
         experiences: List[ExperienceRecord] = []
@@ -235,6 +260,7 @@ class Retriever(IRetriever):
                 scope_filter,
                 memory_type="experience",
                 limit=k_eps,
+                type_priority=priority_scores.get("experience", 0.0),
             )
 
         skills: List[SkillRecord] = []
@@ -246,6 +272,7 @@ class Retriever(IRetriever):
                 scope_filter,
                 memory_type="skill",
                 limit=k_eps,
+                type_priority=priority_scores.get("skill", 0.0),
             )
 
         patterns: List[PatternRecord] = []
@@ -257,10 +284,12 @@ class Retriever(IRetriever):
                 scope_filter,
                 memory_type="failure_pattern",
                 limit=k_eps,
+                type_priority=priority_scores.get("failure_pattern", 0.0),
             )
 
+        facts = _deduplicate_items(facts, memory_type="fact")
         beliefs = build_fact_beliefs(facts) if profile.beliefs else []
-        return RetrievalBundle(
+        bundle = RetrievalBundle(
             semantic_chunks=semantic_chunks,
             facts=facts,
             beliefs=beliefs,
@@ -271,6 +300,7 @@ class Retriever(IRetriever):
             failure_patterns=patterns,
             citations=[],
         )
+        return _deduplicate_retrieval_bundle(bundle, profile)
 
     def _rank_memory_items(
         self,
@@ -281,15 +311,16 @@ class Retriever(IRetriever):
         *,
         memory_type: str,
         limit: int | None = None,
+        type_priority: float = 0.0,
     ) -> list[Any]:
-        scored: list[tuple[tuple[float, float, int], Any]] = []
+        scored: list[tuple[tuple[float, float, float, int], Any]] = []
         for idx, item in enumerate(items):
             if not _passes_scope_filter(item, memory_type=memory_type, scope_filter=scope_filter):
                 continue
             score = _memory_score(item, domain_weights, scope_filter=scope_filter)
             if score < _retrieval_score_threshold(memory_type):
                 continue
-            scored.append(((score, _memory_time(item), -idx), item))
+            scored.append(((score + type_priority, score, _memory_time(item), -idx), item))
 
         if not scored:
             return []
@@ -311,8 +342,8 @@ class Retriever(IRetriever):
         return _valid_reranked_items(reranked, items)
 
 
-def _deduplicate_scored_items(scored: list[tuple[tuple[float, float, int], Any]], *, memory_type: str) -> list[tuple[tuple[float, float, int], Any]]:
-    out: list[tuple[tuple[float, float, int], Any]] = []
+def _deduplicate_scored_items(scored: list[tuple[tuple[float, ...], Any]], *, memory_type: str) -> list[tuple[tuple[float, ...], Any]]:
+    out: list[tuple[tuple[float, ...], Any]] = []
     seen: set[str] = set()
     for score, item in sorted(scored, key=lambda pair: pair[0], reverse=True):
         keys = _dedup_keys(item, memory_type=memory_type)
@@ -333,6 +364,66 @@ def _deduplicate_items(items: list[Any], *, memory_type: str) -> list[Any]:
         seen.update(keys)
         out.append(item)
     return out
+
+
+def _deduplicate_retrieval_bundle(bundle: RetrievalBundle, profile: Any) -> RetrievalBundle:
+    seen_content: set[str] = set()
+    cleaned: dict[str, list[Any]] = {attr: [] for attr, _memory_type in _DEFAULT_BUNDLE_ORDER}
+
+    for attr, memory_type in _bundle_section_order(profile):
+        items = getattr(bundle, attr)
+        for item in items:
+            fingerprint = _content_fingerprint(item, memory_type=memory_type)
+            if fingerprint and fingerprint in seen_content:
+                continue
+            if fingerprint:
+                seen_content.add(fingerprint)
+            cleaned[attr].append(item)
+
+    return RetrievalBundle(
+        semantic_chunks=cleaned["semantic_chunks"],
+        facts=cleaned["facts"],
+        beliefs=bundle.beliefs,
+        episodes=cleaned["episodes"],
+        decisions=cleaned["decisions"],
+        experiences=cleaned["experiences"],
+        skills=cleaned["skills"],
+        failure_patterns=cleaned["failure_patterns"],
+        citations=bundle.citations,
+    )
+
+
+def _bundle_section_order(profile: Any) -> list[tuple[str, str]]:
+    out: list[tuple[str, str]] = []
+    seen_attrs: set[str] = set()
+    for section in getattr(profile, "context_sections", ()):
+        pair = _BUNDLE_SECTION_TYPES.get(section)
+        if pair is None:
+            continue
+        attr, _memory_type = pair
+        if attr in seen_attrs:
+            continue
+        seen_attrs.add(attr)
+        out.append(pair)
+    for pair in _DEFAULT_BUNDLE_ORDER:
+        attr, _memory_type = pair
+        if attr not in seen_attrs:
+            seen_attrs.add(attr)
+            out.append(pair)
+    return out
+
+
+def _intent_type_priority_scores(profile: Any) -> dict[str, float]:
+    ordered_types: list[str] = []
+    seen: set[str] = set()
+    for _attr, memory_type in _bundle_section_order(profile):
+        normalized = _normalize_memory_type(memory_type)
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        ordered_types.append(normalized)
+    total = len(ordered_types)
+    return {memory_type: (total - idx) * _INTENT_PRIORITY_STEP for idx, memory_type in enumerate(ordered_types)}
 
 
 def _dedup_keys(item: Any, *, memory_type: str) -> set[str]:
@@ -367,7 +458,7 @@ def _content_fingerprint(item: Any, *, memory_type: str) -> str:
     return _normalize_text(text)
 
 
-def _top_scored_items(scored: list[tuple[tuple[float, float, int], Any]], *, limit: int | None) -> list[Any]:
+def _top_scored_items(scored: list[tuple[tuple[float, ...], Any]], *, limit: int | None) -> list[Any]:
     if limit is not None:
         if limit <= 0:
             return []
