@@ -3,52 +3,44 @@ from __future__ import annotations
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Any, Protocol, TypeVar
+from typing import Any
 
 from app.agent_cycle import AgentCycleRecord, experience_from_agent_cycle
-from app.writeback.service import WriteBackService
 from domain.models import WriteReport
 from domain.writeback import WritebackRawItem, WritebackRequest, WritebackResult
-
-T = TypeVar("T")
-
-
-@dataclass(frozen=True)
-class MemoryCommandContext:
-    writeback_service: WriteBackService
-
-
-class MemoryCommand(Protocol[T]):
-    def execute(self, context: MemoryCommandContext) -> T:
-        ...
-
-
-class MemoryCommandInterpreter:
-    def __init__(self, context: MemoryCommandContext) -> None:
-        self._context = context
-
-    def execute(self, command: MemoryCommand[T]) -> T:
-        return command.execute(self._context)
 
 
 @dataclass(frozen=True)
 class WriteItemsCommand:
+    """Compatibility wrapper for building a WritebackRequest.
+
+    This is no longer part of a command interpreter layer. Public facade methods
+    call WriteBackService directly and use this class only as a small request
+    factory for raw item batches.
+    """
+
     items: list[dict[str, Any]]
     source: str = "user"
     dry_run: bool = False
     meta: dict[str, Any] | None = None
 
-    def execute(self, context: MemoryCommandContext) -> WritebackResult:
-        request = WritebackRequest(
+    def to_request(self) -> WritebackRequest:
+        return WritebackRequest(
             source=self.source,
             dry_run=self.dry_run,
             meta=self.meta or {},
             items=[WritebackRawItem.model_validate(item) for item in self.items],
         )
-        return context.writeback_service.write(request)
 
 
 class SingleWritebackItemCommand:
+    """Base class for one-memory-item factories.
+
+    The historical `Command` suffix is kept for compatibility with existing
+    imports. The class only builds raw writeback items; it does not execute
+    writeback on its own.
+    """
+
     item_type: str
     id_prefix: str
     source: str
@@ -75,11 +67,6 @@ class SingleWritebackItemCommand:
             item["payload"] = payload
         item.update(self.top_level_fields())
         return item
-
-    def execute(self, context: MemoryCommandContext) -> WriteReport:
-        return _to_write_report(
-            WriteItemsCommand([self.to_item()], source=self.source, meta=self.meta).execute(context)
-        )
 
 
 @dataclass(frozen=True)
@@ -243,15 +230,15 @@ class RecordAgentCycleCommand:
     cycle: AgentCycleRecord | dict[str, Any]
     source: str = "agent-cycle"
 
-    def execute(self, context: MemoryCommandContext) -> WriteReport:
+    def to_item(self) -> dict[str, Any]:
         record = self.cycle if isinstance(self.cycle, AgentCycleRecord) else AgentCycleRecord.model_validate(self.cycle)
         payload = experience_from_agent_cycle(record)
         meta = dict(payload.pop("meta") or {})
         meta.setdefault("recorded_from", "agent_cycle")
-        return RecordExperienceCommand(**payload, source=self.source, meta=meta).execute(context)
+        return RecordExperienceCommand(**payload, source=self.source, meta=meta).to_item()
 
 
-def _to_write_report(result: WritebackResult) -> WriteReport:
+def to_write_report(result: WritebackResult) -> WriteReport:
     return WriteReport(
         saved=result.saved_count,
         rejected=result.rejected_count + result.error_count,
