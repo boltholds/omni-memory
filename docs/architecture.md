@@ -93,6 +93,20 @@ durable private memory with no domain_ids -> scope warning, not rejection
 
 This keeps test fixtures and benchmark artifacts out of long-term consolidation while avoiding a hard breaking change for existing write paths.
 
+## Domain-aware retrieval
+
+Domain graph is used as a ranking signal, not as a hard filter:
+
+```text
+query text
+  -> infer matching DomainNode ids by id/name/aliases
+  -> expand through DomainGraphRepo.reachable_domain_ids(...)
+  -> boost memories whose meta.scope.domain_ids overlap
+  -> downrank test / benchmark / sandbox / ephemeral / session memories
+```
+
+This means a query about `OmniMemory dependency issue` can prefer OmniMemory-scoped skills over Persona-scoped skills even if both match the lexical query. If no domain is detected, retrieval still works like ordinary memory retrieval, with only hygiene penalties applied.
+
 ## Policy-first writeback
 
 Every write passes through:
@@ -128,7 +142,7 @@ development action
   -> better next action
 ```
 
-The first implemented foundation is manual MCP write/list/get/search for skills and failure patterns. Consolidation can later promote repeated high-confidence experience into these records.
+Consolidation ignores memories marked as `exclude_from_consolidation=true`, as well as `test`, `benchmark`, `sandbox`, `ephemeral` and `session` memories. This prevents test fixtures and temporary runtime artifacts from becoming durable skills or failure patterns.
 
 ## Intent-aware retrieval
 
