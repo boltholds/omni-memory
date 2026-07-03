@@ -13,6 +13,28 @@ def _object_schema(properties: dict[str, Any], required: list[str] | None = None
     return schema
 
 
+def _scope_schema() -> dict[str, Any]:
+    return {
+        "type": "object",
+        "description": "Optional scope-aware retrieval filter.",
+        "properties": {
+            "domain_ids": {"type": "array", "items": {"type": "string"}},
+            "domains": {"type": "array", "items": {"type": "string"}},
+            "environments": {"type": "array", "items": {"type": "string"}},
+            "environment": {"type": "string"},
+            "durabilities": {"type": "array", "items": {"type": "string"}},
+            "durability": {"type": "string"},
+            "memory_types": {"type": "array", "items": {"type": "string"}},
+            "types": {"type": "array", "items": {"type": "string"}},
+            "include_ephemeral": {"type": "boolean", "default": True},
+            "strict_domains": {"type": "boolean", "default": False},
+            "expand_domains": {"type": "boolean", "default": True},
+        },
+        "additionalProperties": True,
+        "default": {},
+    }
+
+
 MCP_TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "name": "omni_memory_write_items",
@@ -36,6 +58,7 @@ MCP_TOOL_SCHEMAS: list[dict[str, Any]] = [
                 "k_eps": {"type": "integer", "default": 3},
                 "intent": {"type": "string"},
                 "mode": {"type": "string"},
+                "scope": _scope_schema(),
             },
             ["query"],
         ),
@@ -50,6 +73,7 @@ MCP_TOOL_SCHEMAS: list[dict[str, Any]] = [
                 "style": {"type": "string", "default": "concise"},
                 "intent": {"type": "string"},
                 "mode": {"type": "string"},
+                "scope": _scope_schema(),
             },
             ["question"],
         ),
@@ -62,6 +86,7 @@ MCP_TOOL_SCHEMAS: list[dict[str, Any]] = [
                 "query": {"type": "string", "default": ""},
                 "intent": {"type": "string"},
                 "mode": {"type": "string"},
+                "scope": _scope_schema(),
             }
         ),
     },
@@ -72,6 +97,7 @@ MCP_TOOL_SCHEMAS: list[dict[str, Any]] = [
             {
                 "query": {"type": "string"},
                 "facts": {"type": "array", "items": {"type": "object"}},
+                "scope": _scope_schema(),
             }
         ),
     },
@@ -365,13 +391,13 @@ def build_mcp_handlers(memory: OmniMemory) -> dict[str, Callable[..., Any]]:
         if raw_facts is not None:
             facts = [Fact.model_validate(item) for item in raw_facts]
             return memory.consistency.detect_conflicts(facts).model_dump()
-        return memory.detect_conflicts(kwargs.get("query")).model_dump()
+        return memory.detect_conflicts(kwargs.get("query"), scope=kwargs.get("scope") or {}).model_dump()
 
     return {
         "omni_memory_write_items": lambda **kwargs: memory.write_items(kwargs["items"], source=kwargs.get("source", "mcp"), dry_run=kwargs.get("dry_run", False)).model_dump(),
-        "omni_memory_retrieve": lambda **kwargs: memory.retrieve(kwargs["query"], k_sem=kwargs.get("k_sem", 5), k_eps=kwargs.get("k_eps", 3), intent=kwargs.get("intent"), mode=kwargs.get("mode")).model_dump(),
-        "omni_memory_ask": lambda **kwargs: memory.ask(kwargs["question"], lang=kwargs.get("lang", "en"), style=kwargs.get("style", "concise"), intent=kwargs.get("intent"), mode=kwargs.get("mode")).__dict__,
-        "omni_memory_context": lambda **kwargs: memory.build_context(kwargs.get("query", ""), intent=kwargs.get("intent"), mode=kwargs.get("mode")).model_dump(),
+        "omni_memory_retrieve": lambda **kwargs: memory.retrieve(kwargs["query"], k_sem=kwargs.get("k_sem", 5), k_eps=kwargs.get("k_eps", 3), intent=kwargs.get("intent"), mode=kwargs.get("mode"), scope=kwargs.get("scope") or {}).model_dump(),
+        "omni_memory_ask": lambda **kwargs: memory.ask(kwargs["question"], lang=kwargs.get("lang", "en"), style=kwargs.get("style", "concise"), intent=kwargs.get("intent"), mode=kwargs.get("mode"), scope=kwargs.get("scope") or {}).__dict__,
+        "omni_memory_context": lambda **kwargs: memory.build_context(kwargs.get("query", ""), intent=kwargs.get("intent"), mode=kwargs.get("mode"), scope=kwargs.get("scope") or {}).model_dump(),
         "omni_memory_detect_conflicts": detect_conflicts,
         "omni_memory_write_fact": lambda **kwargs: memory.write_fact(kwargs["subject"], kwargs["predicate"], kwargs["object"], source=kwargs.get("source", "mcp"), confidence=kwargs.get("confidence", 1.0)).model_dump(),
         "omni_memory_list_facts": lambda **kwargs: memory.maintain_facts({"operation": "list", "subject": kwargs.get("subject"), "predicate": kwargs.get("predicate"), "object": kwargs.get("object"), "status": kwargs.get("status"), "limit": kwargs.get("limit")}).model_dump(mode="json"),
