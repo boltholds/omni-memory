@@ -119,7 +119,7 @@ def test_retriever_penalizes_unscoped_durable_memory_when_domain_context_exists(
     assert [item.id for item in ranked] == ["scoped", "generic"]
 
 
-def test_retriever_filters_items_below_score_threshold():
+def test_retriever_scope_filter_can_exclude_ephemeral_notes_without_hiding_normal_notes():
     retriever = Retriever(VectorStoreRepo(embedder=HashEmbedder()), GraphRepo(), EpisodicRepo())
     items = [
         note("bad", "Sandbox session note", scope={"environment": "sandbox", "durability": "session"}),
@@ -130,7 +130,7 @@ def test_retriever_filters_items_below_score_threshold():
         "OmniMemory memory",
         items,
         {"domain:project:omni-memory": 4.0},
-        RetrievalScopeFilter(domain_ids=["domain:project:omni-memory"]),
+        RetrievalScopeFilter(domain_ids=["domain:project:omni-memory"], include_ephemeral=False),
         memory_type="note",
         limit=5,
     )
