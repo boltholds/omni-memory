@@ -97,3 +97,22 @@ def test_domain_graph_repo_links_projects_and_shared_domains():
     assert repo.link_count() == 2
     assert [node.id for node in repo.list_nodes(kind="project")] == [omni.id, persona.id]
     assert set(repo.related_domain_ids(infra.id)) == {omni.id, persona.id}
+    assert repo.successors(omni.id, relation="has_subdomain") == [infra.id]
+    assert set(repo.predecessors(infra.id, relation="has_subdomain")) == {omni.id, persona.id}
+
+
+def test_domain_graph_repo_supports_multihop_traversal():
+    repo = DomainGraphRepo()
+    omni = repo.upsert_node(DomainNode(id=domain_id("project", "omni-memory"), kind="project", name="OmniMemory"))
+    infra = repo.upsert_node(DomainNode(id=domain_id("knowledge_area", "infrastructure"), kind="knowledge_area", name="Infrastructure"))
+    ci = repo.upsert_node(DomainNode(id=domain_id("knowledge_area", "ci"), kind="knowledge_area", name="CI"))
+    pytest = repo.upsert_node(DomainNode(id=domain_id("artifact_group", "pytest"), kind="artifact_group", name="pytest"))
+
+    repo.add_link(DomainLink(source_id=omni.id, relation="has_subdomain", target_id=infra.id))
+    repo.add_link(DomainLink(source_id=infra.id, relation="has_subdomain", target_id=ci.id))
+    repo.add_link(DomainLink(source_id=ci.id, relation="depends_on", target_id=pytest.id))
+
+    assert repo.successors(infra.id) == [ci.id]
+    assert repo.predecessors(ci.id) == [infra.id]
+    assert repo.reachable_domain_ids(omni.id, max_depth=1) == [infra.id]
+    assert repo.reachable_domain_ids(omni.id, max_depth=3) == [ci.id, infra.id, pytest.id]
