@@ -20,7 +20,7 @@ interaction / event / command
 These modules form the stable architecture surface:
 
 ```text
-domain/models.py          typed memory records: Fact, Episode, DecisionRecord, ExperienceRecord
+domain/models.py          typed memory records: Fact, Episode, DecisionRecord, ExperienceRecord, SkillRecord, FailurePatternRecord
 domain/writeback.py       writeback request/result/decision contracts
 domain/operations.py      operation and policy-decision audit envelopes
 app/memory.py             public OmniMemory facade
@@ -36,6 +36,7 @@ app/api_v1.py             product-facing HTTP API
 ```text
 benchmarks/memory_eval/   memory-vs-no-memory benchmark
 infra/db/                 optional SQL audit persistence
+infra/repo/               in-memory repositories for facts, decisions, experience, skills and failure patterns
 docs/                     architecture, persistence and demo docs
 migrations/               Alembic migrations for audit persistence
 ```
@@ -57,11 +58,13 @@ They should remain behind explicit entrypoints and should not be required for th
 ## Memory types
 
 ```text
-Fact              current/historical structured knowledge
-MemoryObject      semantic notes and generic memories
-Episode           session or event-level memories
-DecisionRecord    decisions, alternatives and consequences
-ExperienceRecord  goal/action/outcome/lesson reusable experience
+Fact                  current/historical structured knowledge
+MemoryObject          semantic notes and generic memories
+Episode               session or event-level memories
+DecisionRecord        decisions, alternatives and consequences
+ExperienceRecord      goal/action/outcome/lesson reusable experience
+SkillRecord           reusable procedure promoted from repeated successful experience
+FailurePatternRecord  symptom/cause/fix/detection pattern promoted from repeated failures
 ```
 
 ## Policy-first writeback
@@ -86,6 +89,21 @@ policy_decisions
 operations
 ```
 
+## Cognitive memory loop
+
+The practical learning loop is:
+
+```text
+development action
+  -> ExperienceRecord
+  -> consolidation
+  -> SkillRecord / FailurePatternRecord
+  -> retrieval by intent
+  -> better next action
+```
+
+The first implemented foundation is manual MCP write/list/get/search for skills and failure patterns. Consolidation can later promote repeated high-confidence experience into these records.
+
 ## Intent-aware retrieval
 
 `MemoryPlanner` controls which memory channels are used for each intent:
@@ -93,9 +111,9 @@ operations
 ```text
 answer_question -> facts, beliefs, conflicts, semantic notes
 make_decision   -> decision records, relevant experience
-debug_failure   -> relevant experience
+fail/debug      -> relevant experience, failure patterns, skills
 plan_task        -> beliefs, facts, decisions, experience, notes
-write_code       -> decisions, experience, semantic notes
+write_code       -> decisions, experience, skills, semantic notes
 ```
 
 ## Persistence
