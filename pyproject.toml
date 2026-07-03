@@ -61,6 +61,10 @@ warn_unused_ignores = true
 
 
 [tool.pytest.ini_options]
+markers = [
+    "llm_benchmark: requires a local LLM provider and is skipped unless explicitly enabled",
+    "ollama: requires a local Ollama server",
+]
 filterwarnings = [
     "ignore::DeprecationWarning:faiss.*",
     "ignore::DeprecationWarning:spacy.*",
