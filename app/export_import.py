@@ -1,11 +1,16 @@
 # app/export_import.py
 from __future__ import annotations
-from typing import Any, Dict, List
+
 import json
 import sqlite3
+from typing import Any, Dict, List, Protocol
 
-from domain.models import MemoryObject, Fact, Episode, EpisodeEvent
-from app.writeback_legacy import WriteBackService
+from domain.models import Episode, EpisodeEvent, Fact, MemoryObject
+
+
+class MemoryWriteFacade(Protocol):
+    def write(self, items: list[dict[str, Any]]):
+        ...
 
 
 def export_memory(vrepo, grepo, erepo) -> Dict[str, Any]:
@@ -29,10 +34,12 @@ def export_memory(vrepo, grepo, erepo) -> Dict[str, Any]:
     return {"notes": notes, "facts": facts, "episodes": episodes}
 
 
-def import_memory(writeback: WriteBackService, archive: Dict[str, Any]):
+def import_memory(writeback: MemoryWriteFacade, archive: Dict[str, Any]):
     """
-    Загрузка архива через WriteBackService (применяются политики/PII/т.д.).
-    Возвращает итоговый WriteReport.
+    Загрузка архива через текущий WriteBackService/OmniMemory facade.
+
+    The caller only needs to provide a small facade with `write(items)`, which is
+    how admin import avoids depending on a concrete legacy writeback class.
     """
     items: List[Dict[str, Any]] = []
     items += list(archive.get("facts") or [])
@@ -40,7 +47,7 @@ def import_memory(writeback: WriteBackService, archive: Dict[str, Any]):
     # Преобразуем сохранённые MemoryObject к унифицированному "note"-входу
     for n in archive.get("notes") or []:
         if isinstance(n, dict):
-            payload = (n.get("payload") or {})
+            payload = n.get("payload") or {}
             text = payload.get("text")
             if text is None and payload:
                 # если не было text — сохраним весь payload в raw
@@ -57,6 +64,7 @@ def vr_repo_iter_objects(vrepo) -> List[MemoryObject]:
     # VectorStoreRepo хранит оригинальные MemoryObject в _store
     return list(vrepo._store.values())  # type: ignore[attr-defined]
 
+
 def gr_repo_iter_facts(grepo) -> List[Fact]:
     # GraphRepo хранит MultiDiGraph в _g с edges (s, o, key, data)
     g = grepo._g  # type: ignore[attr-defined]
@@ -71,6 +79,7 @@ def gr_repo_iter_facts(grepo) -> List[Fact]:
             meta=data.get("meta") or {},
         ))
     return out
+
 
 def ep_repo_iter_all(erepo) -> List[Episode]:
     # Вычитываем всё из SQLite
