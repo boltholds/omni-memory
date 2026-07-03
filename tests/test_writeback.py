@@ -13,7 +13,7 @@ def test_writeback_accepts_verified_fact_and_rejects_pii_note():
     memory = _memory()
 
     items = [
-        # факт с высоким доверием
+        # факт с явным provenance не должен наследовать batch source="test"
         {
             "id": "f-ok",
             "subject": "alice",
@@ -21,7 +21,7 @@ def test_writeback_accepts_verified_fact_and_rejects_pii_note():
             "object": "lighthouse",
             "provenance": Provenance(source="verified", time=100.0).model_dump(),
         },
-        # заметка с email -> должна быть отклонена по PII
+        # заметка без явного provenance наследует batch source и должна быть отклонена по PII
         {"id": "n-bad", "type": "note", "text": "contact me at root@example.com"},
     ]
 
@@ -32,8 +32,9 @@ def test_writeback_accepts_verified_fact_and_rejects_pii_note():
     assert any("pii_email_blocked" in reason for reason in result.reasons)
 
     saved = result.saved[0]
-    assert saved.meta["scope"]["environment"] == "test"
-    assert saved.meta["scope"]["durability"] == "ephemeral"
+    assert saved.provenance.source == "verified"
+    assert saved.meta["scope"]["environment"] == "dev"
+    assert saved.meta["scope"]["durability"] == "durable"
 
 
 def test_writeback_saves_episode_and_note_without_pii():
