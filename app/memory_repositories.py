@@ -5,6 +5,7 @@ from typing import Any
 
 from app.config import settings
 from domain.repositories import IFactRepo
+from infra.repo.cognitive_repo import FailurePatternRepo, SkillRepo
 from infra.repo.decision_repo import DecisionRepo
 from infra.repo.episodic_repo import EpisodicRepo
 from infra.repo.experience_repo import ExperienceRepo
@@ -19,6 +20,8 @@ class MemoryClearReport:
     episodes: int = 0
     decisions: int = 0
     experiences: int = 0
+    skills: int = 0
+    failure_patterns: int = 0
     session_turns: int = 0
     dry_run: bool = False
 
@@ -30,6 +33,8 @@ class MemoryRepositoryCounts:
     episodes: int | None = None
     decisions: int | None = None
     experiences: int | None = None
+    skills: int | None = None
+    failure_patterns: int | None = None
 
 
 @dataclass(frozen=True)
@@ -39,6 +44,8 @@ class MemoryClearCommand:
     include_episodes: bool = True
     include_decisions: bool = True
     include_experiences: bool = True
+    include_skills: bool = True
+    include_failure_patterns: bool = True
     include_session: bool = True
     dry_run: bool = False
 
@@ -56,6 +63,11 @@ class MemoryClearCommand:
             episodes=_report_count(counts.episodes, include=self.include_episodes),
             decisions=_report_count(counts.decisions, include=self.include_decisions),
             experiences=_report_count(counts.experiences, include=self.include_experiences),
+            skills=_report_count(counts.skills, include=self.include_skills),
+            failure_patterns=_report_count(
+                counts.failure_patterns,
+                include=self.include_failure_patterns,
+            ),
             session_turns=session_turns if self.include_session else 0,
             dry_run=self.dry_run,
         )
@@ -69,6 +81,8 @@ class MemoryClearCommand:
             include_episodes=self.include_episodes,
             include_decisions=self.include_decisions,
             include_experiences=self.include_experiences,
+            include_skills=self.include_skills,
+            include_failure_patterns=self.include_failure_patterns,
         )
         if self.include_session and clear_session is not None:
             clear_session()
@@ -83,6 +97,8 @@ class MemoryRepositories:
     episodic: EpisodicRepo
     decision: Any
     experience: Any
+    skill: Any
+    failure_pattern: Any
 
     def count(self) -> MemoryRepositoryCounts:
         return MemoryRepositoryCounts(
@@ -91,6 +107,8 @@ class MemoryRepositories:
             episodes=_repo_count(self.episodic),
             decisions=_repo_count(self.decision),
             experiences=_repo_count(self.experience),
+            skills=_repo_count(self.skill),
+            failure_patterns=_repo_count(self.failure_pattern),
         )
 
     def clear(
@@ -101,6 +119,8 @@ class MemoryRepositories:
         include_episodes: bool = True,
         include_decisions: bool = True,
         include_experiences: bool = True,
+        include_skills: bool = True,
+        include_failure_patterns: bool = True,
     ) -> None:
         if include_vectors:
             _repo_clear(self.vector)
@@ -112,6 +132,10 @@ class MemoryRepositories:
             _repo_clear(self.decision)
         if include_experiences:
             _repo_clear(self.experience)
+        if include_skills:
+            _repo_clear(self.skill)
+        if include_failure_patterns:
+            _repo_clear(self.failure_pattern)
 
     def stats(self) -> dict[str, int | None]:
         return self.count().__dict__
@@ -125,6 +149,8 @@ def build_memory_repositories(
     episodic_repo: EpisodicRepo | None = None,
     decision_repo: Any | None = None,
     experience_repo: Any | None = None,
+    skill_repo: Any | None = None,
+    failure_pattern_repo: Any | None = None,
 ) -> MemoryRepositories:
     return MemoryRepositories(
         vector=vector_repo or VectorStoreRepo(embedder=embedder),
@@ -132,6 +158,8 @@ def build_memory_repositories(
         episodic=episodic_repo or EpisodicRepo(db_path=settings.sqlite_path),
         decision=decision_repo or DecisionRepo(),
         experience=experience_repo or ExperienceRepo(),
+        skill=skill_repo or SkillRepo(),
+        failure_pattern=failure_pattern_repo or FailurePatternRepo(),
     )
 
 
