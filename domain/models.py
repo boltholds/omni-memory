@@ -82,6 +82,33 @@ class ExperienceRecord(BaseModel):
     meta: Dict[str, Any] = Field(default_factory=dict)
 
 
+class SkillRecord(BaseModel):
+    id: str
+    name: str
+    problem: str = ""
+    procedure: List[str] = Field(default_factory=list)
+    reuse_when: List[str] = Field(default_factory=list)
+    avoid_when: List[str] = Field(default_factory=list)
+    evidence_ids: List[str] = Field(default_factory=list)
+    confidence: float = 0.5
+    refs: Dict[str, Any] = Field(default_factory=dict)
+    provenance: Provenance = Field(default_factory=Provenance)
+    meta: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FailurePatternRecord(BaseModel):
+    id: str
+    symptom: str
+    root_cause: str = ""
+    fix: str = ""
+    detection: str = ""
+    evidence_ids: List[str] = Field(default_factory=list)
+    confidence: float = 0.5
+    refs: Dict[str, Any] = Field(default_factory=dict)
+    provenance: Provenance = Field(default_factory=Provenance)
+    meta: Dict[str, Any] = Field(default_factory=dict)
+
+
 class RetrievalBundle(BaseModel):
     semantic_chunks: List[MemoryObject] = Field(default_factory=list)
     facts: List[Fact] = Field(default_factory=list)
@@ -89,6 +116,8 @@ class RetrievalBundle(BaseModel):
     episodes: List[Episode] = Field(default_factory=list)
     decisions: List[DecisionRecord] = Field(default_factory=list)
     experiences: List[ExperienceRecord] = Field(default_factory=list)
+    skills: List[SkillRecord] = Field(default_factory=list)
+    failure_patterns: List[FailurePatternRecord] = Field(default_factory=list)
     citations: List[Dict[str, Any]] = Field(default_factory=list)
 
 class ConflictItem(BaseModel):
