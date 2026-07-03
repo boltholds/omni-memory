@@ -1,20 +1,16 @@
-# tests/test_writeback.py
-from domain.models import Provenance
-from domain.policy import MemoryPolicy
-from infra.repo.vector_repo import VectorStoreRepo
-from infra.repo.graph_repo import GraphRepo
-from infra.repo.episodic_repo import EpisodicRepo
-from app.writeback_legacy import WriteBackService
+from __future__ import annotations
 
+from app.builder import build_memory
+from domain.models import Provenance
+from infra.embeddings.factory import HashEmbedder
+
+
+def _memory():
+    return build_memory(use_llm=False, embedder=HashEmbedder())
 
 
 def test_writeback_accepts_verified_fact_and_rejects_pii_note():
-    wb = WriteBackService(
-        vector_repo=VectorStoreRepo(),
-        graph_repo=GraphRepo(),
-        episodic_repo=EpisodicRepo(),
-        policy=MemoryPolicy(),  # accept=0.6
-    )
+    memory = _memory()
 
     items = [
         # факт с высоким доверием
@@ -29,18 +25,19 @@ def test_writeback_accepts_verified_fact_and_rejects_pii_note():
         {"id": "n-bad", "type": "note", "text": "contact me at root@example.com"},
     ]
 
-    rep = wb.write(items)
-    assert rep.saved == 1
-    assert rep.rejected == 1
-    assert any("pii_blocked_note" in r for r in rep.reasons)
+    result = memory.write_items_raw(items, source="test")
+
+    assert result.saved_count == 1
+    assert result.rejected_count == 1
+    assert any("pii_email_blocked" in reason for reason in result.reasons)
+
+    saved = result.saved[0]
+    assert saved.meta["scope"]["environment"] == "test"
+    assert saved.meta["scope"]["durability"] == "ephemeral"
 
 
 def test_writeback_saves_episode_and_note_without_pii():
-    wb = WriteBackService(
-        vector_repo=VectorStoreRepo(),
-        graph_repo=GraphRepo(),
-        episodic_repo=EpisodicRepo(),
-    )
+    memory = _memory()
 
     items = [
         {
@@ -50,11 +47,37 @@ def test_writeback_saves_episode_and_note_without_pii():
             "events": [
                 {"t": 1.0, "event_type": "seen", "summary": "Alice met fisherman Nikolai", "refs": {}}
             ],
-            "provenance": {"source": "test"},
+            "provenance": {"source": "codex-dev"},
         },
         {"id": "n1", "type": "note", "text": "Stone bridge over quiet river"},
     ]
 
-    rep = wb.write(items)
-    assert rep.saved == 2
-    assert rep.rejected == 0
+    result = memory.write_items_raw(items, source="codex-dev")
+
+    assert result.saved_count == 2
+    assert result.rejected_count == 0
+    assert all(item.meta["scope"]["durability"] == "durable" for item in result.saved)
+
+
+def test_writeback_result_contains_operations_and_policy_decisions():
+    memory = _memory()
+
+    result = memory.write_items_raw(
+        [
+            {
+                "id": "fact-auditable",
+                "type": "fact",
+                "subject": "writeback",
+                "predicate": "uses",
+                "object": "policy pipeline",
+                "meta": {"confidence": 1.0, "domain_ids": ["domain:project:omni-memory"]},
+            }
+        ],
+        source="codex-dev",
+    )
+
+    assert result.saved_count == 1
+    assert result.operations
+    assert result.policy_decisions
+    assert any(decision.stage == "conversion" for decision in result.policy_decisions)
+    assert any(decision.stage == "repository" for decision in result.policy_decisions)
