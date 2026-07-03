@@ -1,24 +1,20 @@
-# app/retriever.py
 from __future__ import annotations
 
 from typing import List, Set
 
-from domain.models import RetrievalBundle, Fact, Episode, DecisionRecord, ExperienceRecord
-from domain.ports import IRetriever, IMemoryReadRepository, IGraphRepository, IEpisodicRepository, IDecisionRepository, IExperienceRepository
-from app.entities import build_entity_stack
 from app.config import settings
+from app.entities import build_entity_stack
 from app.memory_planner import MemoryPlanner
 from app.profiling import timed
 from app.stats import stats
+from domain.models import DecisionRecord, Episode, ExperienceRecord, Fact, RetrievalBundle, SkillRecord
+from domain.models import FailurePatternRecord as PatternRecord
+from domain.ports import IDecisionRepository, IEpisodicRepository, IExperienceRepository, IGraphRepository, IMemoryReadRepository, IRetriever, ISkillRepository
+from domain.ports import IFailurePatternRepository as PatternRepository
 from infra.consistency import build_fact_beliefs
 
 
 def _simple_entities(query: str) -> List[str]:
-    """
-    Примитивная NER-заглушка:
-    - токены из букв/цифр длиной >= 3
-    - без дубликатов, регистр игнорируем
-    """
     seen: Set[str] = set()
     ents: List[str] = []
     for raw in query.replace("_", " ").split():
@@ -30,22 +26,12 @@ def _simple_entities(query: str) -> List[str]:
 
 
 def _entity_variants(entity: str) -> list[str]:
-    """Return stable lookup variants for graph nodes.
-
-    Graph facts can come from different write paths: some values are already
-    normalized to lowercase, while object values may preserve original casing.
-    Retrieval should try both forms so a first-hop object like "OmniMemory" can
-    lead to a second-hop subject like "omnimemory".
-    """
-
     value = str(entity or "").strip()
     if not value:
         return []
-
-    variants = [value, value.lower(), value.casefold()]
     out: list[str] = []
     seen: set[str] = set()
-    for item in variants:
+    for item in [value, value.lower(), value.casefold()]:
         if item and item not in seen:
             seen.add(item)
             out.append(item)
@@ -53,8 +39,6 @@ def _entity_variants(entity: str) -> list[str]:
 
 
 def _compound_entities(entities: list[str], *, max_n: int = 3) -> list[str]:
-    """Add simple adjacent n-grams for graph keys such as memory_project."""
-
     out: list[str] = []
     seen: set[str] = set()
 
@@ -65,14 +49,11 @@ def _compound_entities(entities: list[str], *, max_n: int = 3) -> list[str]:
 
     for entity in entities:
         add(entity)
-
     for n in range(2, max_n + 1):
         if len(entities) < n:
             continue
         for i in range(0, len(entities) - n + 1):
-            window = entities[i : i + n]
-            add("_".join(window))
-
+            add("_".join(entities[i : i + n]))
     return out
 
 
@@ -85,14 +66,6 @@ def _add_fact(fact: Fact, facts: list[Fact], seen_ids: set[str]) -> bool:
 
 
 class Retriever(IRetriever):
-    """
-    Объединённый извлекатель:
-      - semantic: векторный поиск по исходному запросу
-      - graph: выборка фактов по найденным сущностям (subject/object)
-      - graph 2-hop: расширение по subject/object найденных фактов
-      - episodic: поиск эпизодов по сущностям
-    """
-
     def __init__(
         self,
         vector_repo: IMemoryReadRepository,
@@ -100,12 +73,16 @@ class Retriever(IRetriever):
         episodic_repo: IEpisodicRepository,
         decision_repo: IDecisionRepository | None = None,
         experience_repo: IExperienceRepository | None = None,
+        skill_repo: ISkillRepository | None = None,
+        pattern_repo: PatternRepository | None = None,
     ) -> None:
         self._vector = vector_repo
         self._graph = graph_repo
         self._episodic = episodic_repo
         self._decisions = decision_repo
         self._experiences = experience_repo
+        self._skills = skill_repo
+        self._patterns = pattern_repo
         self._extractor, self._linker = build_entity_stack(settings.ner_backend, settings.entity_aliases)
         self._planner = MemoryPlanner()
 
@@ -123,62 +100,45 @@ class Retriever(IRetriever):
     def _expand_graph_two_hop(self, seed_entities: list[str]) -> list[Fact]:
         facts: list[Fact] = []
         seen_ids: set[str] = set()
-
         frontier: list[str] = list(seed_entities)
         seen_entities: set[str] = set()
-
         for _hop in range(2):
             next_frontier: list[str] = []
-
             for entity in frontier:
                 variants = _entity_variants(entity)
                 if not variants:
                     continue
-
                 canonical = variants[-1]
                 if canonical in seen_entities:
                     continue
                 seen_entities.add(canonical)
-
                 found = self._query_graph_entity(entity, facts, seen_ids)
                 for fact in found:
                     next_frontier.extend([fact.subject, fact.object])
-
             frontier = next_frontier
             if not frontier:
                 break
-
         return facts
 
     @timed("retriever.retrieve", slow_ms=100)
-    def retrieve(
-        self,
-        query: str,
-        k_sem: int = 5,
-        k_eps: int = 3,
-        intent: str | None = None,
-        mode: str | None = None,
-    ) -> RetrievalBundle:
+    def retrieve(self, query: str, k_sem: int = 5, k_eps: int = 3, intent: str | None = None, mode: str | None = None) -> RetrievalBundle:
         profile = self._planner.profile(intent, mode=mode)
         raw_ents = self._extractor.extract(query)
         linked_ents = self._linker.link_all(raw_ents)
         ents = _compound_entities(linked_ents)
 
-        # I Семантические чанки
         semantic_chunks = []
         if profile.semantic:
             stop_vec = stats.timeit("retriever.vec_ms")
             semantic_chunks = self._vector.semantic_search(query, k=k_sem)
             stop_vec()
 
-        # II Факты: прямой поиск + 2-hop expansion по графу.
         facts: List[Fact] = []
         if profile.facts:
             stop_kg = stats.timeit("retriever.kg_ms")
             facts = self._expand_graph_two_hop(ents)
             stop_kg()
 
-        # III Эпизоды (пользователя пока не извлекаем -> None)
         episodes: List[Episode] = []
         if profile.episodes:
             stop_ep = stats.timeit("retriever.ep_ms")
@@ -193,8 +153,15 @@ class Retriever(IRetriever):
         if profile.experiences and self._experiences is not None:
             experiences = self._experiences.search(query, k=k_eps)
 
-        beliefs = build_fact_beliefs(facts) if profile.beliefs else []
+        skills: List[SkillRecord] = []
+        if profile.skills and self._skills is not None:
+            skills = self._skills.search(query, k=k_eps)
 
+        patterns: List[PatternRecord] = []
+        if profile.failure_patterns and self._patterns is not None:
+            patterns = self._patterns.search(query, k=k_eps)
+
+        beliefs = build_fact_beliefs(facts) if profile.beliefs else []
         return RetrievalBundle(
             semantic_chunks=semantic_chunks,
             facts=facts,
@@ -202,5 +169,7 @@ class Retriever(IRetriever):
             episodes=episodes,
             decisions=decisions,
             experiences=experiences,
+            skills=skills,
+            failure_patterns=patterns,
             citations=[],
         )
