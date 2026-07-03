@@ -1,6 +1,8 @@
 # app/orchestrator.py
 from __future__ import annotations
 
+from typing import Any
+
 from domain.models import RetrievalBundle, ContextPack
 from domain.ports import IMemoryOrchestrator, IRetriever, IConsistencyEngine
 from infra.metrics import metrics
@@ -14,11 +16,15 @@ class Orchestrator(IMemoryOrchestrator):
         self._retriever = retriever
         self._consistency = consistency
 
-    def plan_retrieval(self, query: str, intent: str | None = None, mode: str | None = None) -> RetrievalBundle:
+    def plan_retrieval(
+        self,
+        query: str,
+        intent: str | None = None,
+        mode: str | None = None,
+        scope: dict[str, Any] | None = None,
+    ) -> RetrievalBundle:
         metrics.inc("context_calls", 1)
-        if intent is None and mode is None:
-            return self._retriever.retrieve(query)
-        return self._retriever.retrieve(query, intent=intent, mode=mode)
+        return self._retriever.retrieve(query, intent=intent, mode=mode, scope=scope)
 
     @timed("retriever.retrieve", slow_ms=100)
     def assemble_context(self, bundle: RetrievalBundle, intent: str | None = None, mode: str | None = None) -> ContextPack:
