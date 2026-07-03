@@ -1,8 +1,24 @@
 
 from typing import Any, Protocol
-from domain.models import (MemoryObject, Fact, Episode, DecisionRecord, ExperienceRecord)
-from domain.writeback import (WritebackRawItem, WritebackConversionPolicy, get_item_id, normalize_provenance, clean_meta, DomainMemoryObject)
-from domain.models import Provenance, Fact, Episode, MemoryObject, EpisodeEvent
+from domain.models import (
+    DecisionRecord,
+    Episode,
+    EpisodeEvent,
+    ExperienceRecord,
+    Fact,
+    FailurePatternRecord,
+    MemoryObject,
+    Provenance,
+    SkillRecord,
+)
+from domain.writeback import (
+    DomainMemoryObject,
+    WritebackConversionPolicy,
+    WritebackRawItem,
+    clean_meta,
+    get_item_id,
+    normalize_provenance,
+)
 from domain.policy import MemoryPolicy
 
 
@@ -23,16 +39,12 @@ class WritebackPolicyResolver:
                 return policy
 
         raise WritebackPolicyNotFoundError("No writeback conversion policy matched item")
-    
-    
+
 
 def _parse(self, raw: dict[str, Any]) -> tuple[str, DomainMemoryObject]:
     item = WritebackRawItem.model_validate(raw)
     policy = self._resolver.resolve(item)
     return policy.kind, policy.convert(item, memory_policy=self._policy)
-
-
-
 
 
 class FactWritebackPolicy:
@@ -66,47 +78,47 @@ class FactWritebackPolicy:
             provenance=normalize_provenance(item),
             meta=clean_meta(item),
         )
-        
-    
+
+
 class EpisodeWritebackPolicy:
-        name = "episode_writeback"
-        kind = "episode"
+    name = "episode_writeback"
+    kind = "episode"
 
-        def matches(self, item: WritebackRawItem) -> bool:
-            if item.type == "episode":
-                return True
+    def matches(self, item: WritebackRawItem) -> bool:
+        if item.type == "episode":
+            return True
 
-            payload = item.payload or {}
+        payload = item.payload or {}
 
-            return (
-                item.participants is not None
-                or item.events is not None
-                or payload.get("participants") is not None
-                or payload.get("events") is not None
-            )
+        return (
+            item.participants is not None
+            or item.events is not None
+            or payload.get("participants") is not None
+            or payload.get("events") is not None
+        )
 
-        def convert(self, item: WritebackRawItem) -> Episode:
-            payload = item.payload or {}
+    def convert(self, item: WritebackRawItem) -> Episode:
+        payload = item.payload or {}
 
-            raw_events = item.events
-            if raw_events is None:
-                raw_events = payload.get("events", [])
+        raw_events = item.events
+        if raw_events is None:
+            raw_events = payload.get("events", [])
 
-            events = [
-                event if isinstance(event, EpisodeEvent) else EpisodeEvent.model_validate(event)
-                for event in raw_events or []
-            ]
+        events = [
+            event if isinstance(event, EpisodeEvent) else EpisodeEvent.model_validate(event)
+            for event in raw_events or []
+        ]
 
-            return Episode(
-                id=get_item_id(item, prefix="episode"),
-                participants=item.participants or payload.get("participants", []),
-                summary=item.summary or payload.get("summary", ""),
-                events=events,
-                provenance=normalize_provenance(item),
-                meta=clean_meta(item),
-            )
-    
-        
+        return Episode(
+            id=get_item_id(item, prefix="episode"),
+            participants=item.participants or payload.get("participants", []),
+            summary=item.summary or payload.get("summary", ""),
+            events=events,
+            provenance=normalize_provenance(item),
+            meta=clean_meta(item),
+        )
+
+
 class DecisionWritebackPolicy:
     name = "decision_writeback"
     kind = "decision"
@@ -159,6 +171,53 @@ class ExperienceWritebackPolicy:
         )
 
 
+class SkillWritebackPolicy:
+    name = "skill_writeback"
+    kind = "skill"
+
+    def matches(self, item: WritebackRawItem) -> bool:
+        return item.type == "skill"
+
+    def convert(self, item: WritebackRawItem) -> SkillRecord:
+        payload = item.payload or {}
+        return SkillRecord(
+            id=get_item_id(item, prefix="skill"),
+            name=str(payload.get("name") or item.summary or ""),
+            problem=str(payload.get("problem") or item.content or ""),
+            procedure=list(payload.get("procedure") or []),
+            reuse_when=list(payload.get("reuse_when") or []),
+            avoid_when=list(payload.get("avoid_when") or []),
+            evidence_ids=list(payload.get("evidence_ids") or []),
+            confidence=float(payload.get("confidence") or item.meta.get("confidence") or 0.5),
+            refs=dict(payload.get("refs") or {}),
+            provenance=normalize_provenance(item),
+            meta=clean_meta(item),
+        )
+
+
+class FailurePatternWritebackPolicy:
+    name = "failure_pattern_writeback"
+    kind = "failure_pattern"
+
+    def matches(self, item: WritebackRawItem) -> bool:
+        return item.type in {"failure_pattern", "failure-pattern"}
+
+    def convert(self, item: WritebackRawItem) -> FailurePatternRecord:
+        payload = item.payload or {}
+        return FailurePatternRecord(
+            id=get_item_id(item, prefix="failure_pattern"),
+            symptom=str(payload.get("symptom") or item.summary or ""),
+            root_cause=str(payload.get("root_cause") or ""),
+            fix=str(payload.get("fix") or item.text or ""),
+            detection=str(payload.get("detection") or ""),
+            evidence_ids=list(payload.get("evidence_ids") or []),
+            confidence=float(payload.get("confidence") or item.meta.get("confidence") or 0.5),
+            refs=dict(payload.get("refs") or {}),
+            provenance=normalize_provenance(item),
+            meta=clean_meta(item),
+        )
+
+
 class NoteWritebackPolicy:
     name = "note_writeback"
     kind = "note"
@@ -185,7 +244,7 @@ class NoteWritebackPolicy:
             provenance=normalize_provenance(item),
             meta=clean_meta(item),
         )
-        
+
 
 class PreferenceWritebackPolicy:
     name = "preference_writeback"
