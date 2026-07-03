@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from app.retriever import Retriever, RetrievalScopeFilter
-from domain.models import Fact, MemoryObject, Provenance
+from app.memory_planner import MemoryPlanner
+from app.retriever import Retriever, RetrievalScopeFilter, _deduplicate_retrieval_bundle, _intent_type_priority_scores
+from domain.models import ExperienceRecord, Fact, MemoryObject, Provenance, RetrievalBundle
 from infra.embeddings.factory import HashEmbedder
 from infra.repo.episodic_repo import EpisodicRepo
 from infra.repo.graph_repo import GraphRepo
@@ -136,3 +137,31 @@ def test_retriever_scope_filter_can_exclude_ephemeral_notes_without_hiding_norma
     )
 
     assert [item.id for item in ranked] == ["good"]
+
+
+def test_intent_priority_scores_follow_context_section_order():
+    profile = MemoryPlanner().profile("write_code")
+    scores = _intent_type_priority_scores(profile)
+
+    assert scores["decision"] > scores["skill"] > scores["failure_pattern"] > scores["experience"] > scores["note"]
+
+
+def test_bundle_level_dedup_keeps_higher_priority_memory_type_for_intent():
+    profile = MemoryPlanner().profile("write_code")
+    duplicate_text = "Use official protocol SDK"
+    bundle = RetrievalBundle(
+        semantic_chunks=[note("note-dup", duplicate_text)],
+        experiences=[
+            ExperienceRecord(
+                id="exp-dup",
+                goal=duplicate_text,
+                confidence=0.9,
+                provenance=Provenance(source="test"),
+            )
+        ],
+    )
+
+    cleaned = _deduplicate_retrieval_bundle(bundle, profile)
+
+    assert [item.id for item in cleaned.experiences] == ["exp-dup"]
+    assert cleaned.semantic_chunks == []
