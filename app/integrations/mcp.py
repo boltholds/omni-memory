@@ -43,7 +43,7 @@ _NAMES = [
     "omni_memory_write_experience", "omni_memory_list_experiences", "omni_memory_get_experience", "omni_memory_search_experiences",
     "omni_memory_write_skill", "omni_memory_list_skills", "omni_memory_get_skill", "omni_memory_search_skills",
     "omni_memory_write_failure_pattern", "omni_memory_list_failure_patterns", "omni_memory_get_failure_pattern", "omni_memory_search_failure_patterns",
-    "omni_memory_consolidate_experiences", "omni_memory_record_agent_cycle", "omni_memory_draft_development_cycle", "omni_memory_record_development_cycle",
+    "omni_memory_consolidate_experiences", "omni_memory_record_agent_cycle", "omni_memory_draft_development_cycle", "omni_memory_record_development_cycle", "omni_memory_finish_development_task",
     "omni_memory_session_ingest_turn", "omni_memory_session_commit", "omni_memory_session_clear", "omni_memory_clear", "omni_memory_stats",
 ]
 
@@ -54,6 +54,23 @@ _BY_NAME["omni_memory_ask"] = _tool("omni_memory_ask", {"question": {"type": "st
 _BY_NAME["omni_memory_context"] = _tool("omni_memory_context", {"query": {"type": "string", "default": ""}, "intent": {"type": "string"}, "mode": {"type": "string"}, "scope": _scope_schema()})
 _BY_NAME["omni_memory_detect_conflicts"] = _tool("omni_memory_detect_conflicts", {"query": {"type": "string"}, "facts": {"type": "array", "items": {"type": "object"}}, "scope": _scope_schema()})
 _BY_NAME["omni_memory_mine_facts"] = FACT_MINING_TOOL_SCHEMA
+_BY_NAME["omni_memory_write_items"] = _tool("omni_memory_write_items", {"items": {"type": "array", "items": {"type": "object"}}, "source": {"type": "string", "default": "mcp"}, "dry_run": {"type": "boolean", "default": False}}, ["items"])
+_BY_NAME["omni_memory_write_fact"] = _tool("omni_memory_write_fact", {"subject": {"type": "string"}, "predicate": {"type": "string"}, "object": {"type": "string"}, "source": {"type": "string", "default": "mcp"}, "confidence": {"type": "number", "default": 1.0}}, ["subject", "predicate", "object"])
+_BY_NAME["omni_memory_list_facts"] = _tool("omni_memory_list_facts", {"subject": {"type": "string"}, "predicate": {"type": "string"}, "object": {"type": "string"}, "status": {"type": "string"}, "limit": {"type": "integer"}})
+_BY_NAME["omni_memory_get_fact"] = _tool("omni_memory_get_fact", {"fact_id": {"type": "string"}}, ["fact_id"])
+_BY_NAME["omni_memory_patch_fact"] = _tool("omni_memory_patch_fact", {"fact_id": {"type": "string"}, "patch": {"type": "object"}, "reason": {"type": "string"}, "dry_run": {"type": "boolean", "default": False}}, ["fact_id", "patch"])
+_BY_NAME["omni_memory_retract_fact"] = _tool("omni_memory_retract_fact", {"fact_id": {"type": "string"}, "reason": {"type": "string"}, "dry_run": {"type": "boolean", "default": False}}, ["fact_id"])
+_BY_NAME["omni_memory_supersede_fact"] = _tool("omni_memory_supersede_fact", {"fact_id": {"type": "string"}, "new_fact": {"type": "object"}, "reason": {"type": "string"}, "source": {"type": "string", "default": "mcp"}, "dry_run": {"type": "boolean", "default": False}}, ["fact_id", "new_fact"])
+_BY_NAME["omni_memory_delete_fact"] = _tool("omni_memory_delete_fact", {"fact_id": {"type": "string"}, "hard": {"type": "boolean", "default": False}, "reason": {"type": "string"}, "dry_run": {"type": "boolean", "default": False}}, ["fact_id"])
+_BY_NAME["omni_memory_write_note"] = _tool("omni_memory_write_note", {"text": {"type": "string"}, "source": {"type": "string", "default": "mcp"}, "meta": {"type": "object", "default": {}}}, ["text"])
+_BY_NAME["omni_memory_write_decision"] = _tool("omni_memory_write_decision", {"title": {"type": "string"}, "decision": {"type": "string"}, "context": {"type": "string", "default": ""}, "consequences": {"type": "array", "items": {"type": "string"}, "default": []}, "alternatives": {"type": "array", "items": {"type": "string"}, "default": []}, "refs": {"type": "object", "default": {}}, "status": {"type": "string", "default": "accepted"}, "source": {"type": "string", "default": "mcp"}, "meta": {"type": "object", "default": {}}}, ["title", "decision"])
+_BY_NAME["omni_memory_write_experience"] = _tool("omni_memory_write_experience", {"goal": {"type": "string"}, "lesson": {"type": "string"}, "context": {"type": "string", "default": ""}, "decision": {"type": "string", "default": ""}, "actions": {"type": "array", "items": {"type": "string"}, "default": []}, "outcome": {"type": "string", "default": ""}, "evaluation": {"type": "object", "default": {}}, "reuse_when": {"type": "array", "items": {"type": "string"}, "default": []}, "avoid_when": {"type": "array", "items": {"type": "string"}, "default": []}, "confidence": {"type": "number", "default": 0.5}, "refs": {"type": "object", "default": {}}, "source": {"type": "string", "default": "mcp"}, "meta": {"type": "object", "default": {}}}, ["goal", "lesson"])
+_BY_NAME["omni_memory_write_skill"] = _tool("omni_memory_write_skill", {"name": {"type": "string"}, "problem": {"type": "string", "default": ""}, "procedure": {"type": "array", "items": {"type": "string"}, "default": []}, "reuse_when": {"type": "array", "items": {"type": "string"}, "default": []}, "avoid_when": {"type": "array", "items": {"type": "string"}, "default": []}, "evidence_ids": {"type": "array", "items": {"type": "string"}, "default": []}, "confidence": {"type": "number", "default": 0.5}, "source": {"type": "string", "default": "mcp"}, "meta": {"type": "object", "default": {}}}, ["name"])
+_BY_NAME["omni_memory_write_failure_pattern"] = _tool("omni_memory_write_failure_pattern", {"symptom": {"type": "string"}, "root_cause": {"type": "string", "default": ""}, "fix": {"type": "string", "default": ""}, "detection": {"type": "string", "default": ""}, "evidence_ids": {"type": "array", "items": {"type": "string"}, "default": []}, "confidence": {"type": "number", "default": 0.5}, "source": {"type": "string", "default": "mcp"}, "meta": {"type": "object", "default": {}}}, ["symptom"])
+_BY_NAME["omni_memory_session_ingest_turn"] = _tool("omni_memory_session_ingest_turn", {"role": {"type": "string"}, "content": {"type": "string"}}, ["role", "content"])
+_BY_NAME["omni_memory_session_commit"] = _tool("omni_memory_session_commit", {"source": {"type": "string", "default": "mcp-session"}, "dry_run": {"type": "boolean", "default": False}, "min_confidence": {"type": "number", "default": 0.75}, "clear": {"type": "boolean", "default": True}, "meta": {"type": "object", "default": {}}})
+_BY_NAME["omni_memory_finish_development_task"] = _tool("omni_memory_finish_development_task", {"goal": {"type": "string"}, "lesson": {"type": "string"}, "summary": {"type": "string", "default": ""}, "changed_files": {"type": "array", "items": {"type": "string"}, "default": []}, "commands_run": {"type": "array", "items": {"type": "string"}, "default": []}, "tests": {"type": "array", "items": {"type": "string"}, "default": []}, "decisions": {"type": "array", "items": {"type": "string"}, "default": []}, "outcome": {"type": "string", "default": ""}, "reuse_when": {"type": "array", "items": {"type": "string"}, "default": []}, "avoid_when": {"type": "array", "items": {"type": "string"}, "default": []}, "side_effects": {"type": "array", "items": {"type": "string"}, "default": []}, "confidence": {"type": "number", "default": 0.8}, "source": {"type": "string", "default": "mcp-development-workflow"}, "meta": {"type": "object", "default": {}}, "session_turns": {"type": "array", "items": {"type": "object"}, "default": []}, "run_distiller": {"type": "boolean", "default": True}, "distill_dry_run": {"type": "boolean", "default": True}, "min_confidence": {"type": "number", "default": 0.75}, "clear_session": {"type": "boolean", "default": False}}, ["goal", "lesson"])
+_BY_NAME["omni_memory_clear"] = _tool("omni_memory_clear", {"include_vectors": {"type": "boolean", "default": True}, "include_facts": {"type": "boolean", "default": True}, "include_episodes": {"type": "boolean", "default": True}, "include_decisions": {"type": "boolean", "default": True}, "include_experiences": {"type": "boolean", "default": True}, "include_skills": {"type": "boolean", "default": True}, "include_failure_patterns": {"type": "boolean", "default": True}, "include_session": {"type": "boolean", "default": True}, "dry_run": {"type": "boolean", "default": False}})
 MCP_TOOL_SCHEMAS = [_BY_NAME[name] for name in _NAMES]
 
 
@@ -76,7 +93,7 @@ def build_mcp_handlers(memory: OmniMemory) -> dict[str, Callable[..., Any]]:
         "omni_memory_patch_fact": lambda **kw: memory.maintain_facts({"operation": "patch", "fact_id": kw["fact_id"], "patch": kw.get("patch") or {}, "reason": kw.get("reason"), "dry_run": kw.get("dry_run", False)}).model_dump(mode="json"),
         "omni_memory_retract_fact": lambda **kw: memory.maintain_facts({"operation": "retract", "fact_id": kw["fact_id"], "reason": kw.get("reason"), "dry_run": kw.get("dry_run", False)}).model_dump(mode="json"),
         "omni_memory_supersede_fact": lambda **kw: memory.maintain_facts({"operation": "supersede", "fact_id": kw["fact_id"], "new_fact": kw.get("new_fact") or {}, "reason": kw.get("reason"), "source": kw.get("source", "mcp"), "dry_run": kw.get("dry_run", False)}).model_dump(mode="json"),
-        "omni_memory_delete_fact": lambda **kw: memory.maintain_facts({"operation": "retract", "fact_id": kw["fact_id"], "reason": kw.get("reason"), "dry_run": kw.get("dry_run", False)}).model_dump(mode="json"),
+        "omni_memory_delete_fact": lambda **kw: memory.maintain_facts({"operation": "hard_delete" if kw.get("hard", False) else "retract", "fact_id": kw["fact_id"], "reason": kw.get("reason"), "dry_run": kw.get("dry_run", False)}).model_dump(mode="json"),
         "omni_memory_write_note": lambda **kw: memory.write_note(kw["text"], source=kw.get("source", "mcp"), meta=kw.get("meta") or {}).model_dump(),
         "omni_memory_write_decision": lambda **kw: memory.write_decision(title=kw["title"], decision=kw["decision"], context=kw.get("context", ""), consequences=kw.get("consequences") or [], alternatives=kw.get("alternatives") or [], refs=kw.get("refs") or {}, status=kw.get("status", "accepted"), source=kw.get("source", "mcp"), meta=kw.get("meta") or {}).model_dump(),
         "omni_memory_list_decisions": lambda **kw: {"decisions": [item.model_dump(mode="json") for item in memory.list_decisions(status=kw.get("status"), limit=kw.get("limit"))]},
@@ -97,6 +114,7 @@ def build_mcp_handlers(memory: OmniMemory) -> dict[str, Callable[..., Any]]:
         "omni_memory_record_agent_cycle": lambda **kw: memory.record_agent_cycle({"goal": kw["goal"], "plan": kw.get("plan") or [], "decisions": kw.get("decisions") or [], "actions": kw.get("actions") or [], "outcome": kw.get("outcome", ""), "tests": kw.get("tests") or [], "files": kw.get("files") or [], "side_effects": kw.get("side_effects") or [], "lesson": kw["lesson"], "reuse_when": kw.get("reuse_when") or [], "avoid_when": kw.get("avoid_when") or [], "confidence": kw.get("confidence", 0.8), "meta": kw.get("meta") or {}}, source=kw.get("source", "mcp-agent-cycle")).model_dump(),
         "omni_memory_draft_development_cycle": lambda **kw: memory.draft_development_cycle(_development_cycle_payload(kw)).model_dump(mode="json"),
         "omni_memory_record_development_cycle": lambda **kw: memory.record_development_cycle(_development_cycle_payload(kw), source=kw.get("source", "mcp-development-cycle")).model_dump(),
+        "omni_memory_finish_development_task": lambda **kw: memory.finish_development_task(_finish_development_task_payload(kw)).model_dump(mode="json"),
         "omni_memory_session_ingest_turn": lambda **kw: _session_ingest_turn(memory, role=kw["role"], content=kw["content"]),
         "omni_memory_session_commit": lambda **kw: memory.commit_session(source=kw.get("source", "mcp-session"), dry_run=kw.get("dry_run", False), meta=kw.get("meta") or {}, min_confidence=kw.get("min_confidence", 0.75), clear=kw.get("clear", True)).model_dump(),
         "omni_memory_session_clear": lambda **kw: _session_clear(memory),
@@ -119,6 +137,21 @@ def _write_failure_pattern(memory: OmniMemory, **kw: Any) -> dict[str, Any]:
 
 def _development_cycle_payload(kw: dict[str, Any]) -> dict[str, Any]:
     return {"goal": kw["goal"], "summary": kw.get("summary", ""), "changed_files": kw.get("changed_files") or [], "commands_run": kw.get("commands_run") or [], "tests": kw.get("tests") or [], "decisions": kw.get("decisions") or [], "outcome": kw.get("outcome", ""), "lesson": kw.get("lesson", ""), "reuse_when": kw.get("reuse_when") or [], "avoid_when": kw.get("avoid_when") or [], "side_effects": kw.get("side_effects") or [], "confidence": kw.get("confidence", 0.8), "meta": kw.get("meta") or {}}
+
+
+def _finish_development_task_payload(kw: dict[str, Any]) -> dict[str, Any]:
+    payload = _development_cycle_payload(kw)
+    payload.update(
+        {
+            "source": kw.get("source", "mcp-development-workflow"),
+            "session_turns": kw.get("session_turns") or [],
+            "run_distiller": kw.get("run_distiller", True),
+            "distill_dry_run": kw.get("distill_dry_run", True),
+            "min_confidence": kw.get("min_confidence", 0.75),
+            "clear_session": kw.get("clear_session", False),
+        }
+    )
+    return payload
 
 
 def _session_ingest_turn(memory: OmniMemory, *, role: str, content: str) -> dict[str, Any]:

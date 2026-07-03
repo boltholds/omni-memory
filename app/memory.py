@@ -11,6 +11,7 @@ from .retriever import Retriever
 from app.agent_cycle import AgentCycleRecord
 from app.consolidation import ConsolidationResult, ExperienceConsolidator
 from app.development_cycle import DevelopmentCycleDraft, DevelopmentCycleRecorder
+from app.development_memory_workflow import DevelopmentMemoryWorkflow, FinishDevelopmentTaskResult
 from app.fact_maintenance import FactMaintenanceCommand, FactMaintenanceResult, FactMaintenanceService
 from app.fact_mining import FactExtractor, FactMiningResult, FactMiningService
 from app.memory_commands import (
@@ -26,7 +27,7 @@ from app.memory_commands import (
     WriteSkillCommand,
 )
 from app.memory_repositories import MemoryClearCommand, MemoryClearReport, MemoryRepositories, build_memory_repositories
-from domain.distiller import IMemoryDistiller, SessionTurn
+from domain.distiller import ISessionMemoryDistiller, SessionTurn
 from domain.models import ContextPack, ConflictReport, DecisionRecord, ExperienceRecord, RetrievalBundle, WriteReport
 from domain.model_ports import IEmbedder, ModelBundle
 from domain.policy import MemoryPolicy
@@ -103,7 +104,7 @@ class OmniMemory:
     def __init__(
         self,
         use_llm: bool = False,
-        distiller: IMemoryDistiller | None = None,
+        distiller: ISessionMemoryDistiller | None = None,
         *,
         vector_repo: VectorStoreRepo | None = None,
         graph_repo: IFactRepo | None = None,
@@ -161,6 +162,7 @@ class OmniMemory:
             failure_pattern_repo=self.repositories.failure_pattern,
         )
         self.development_cycle_recorder = DevelopmentCycleRecorder()
+        self.development_memory_workflow = DevelopmentMemoryWorkflow(self)
         self.writeback_service = build_writeback_service(repositories=self.repositories, reject_conflicts=reject_conflicts)
         self._session_turns: list[SessionTurn] = []
         self.reranker = bundle.reranker
@@ -227,6 +229,9 @@ class OmniMemory:
     def record_development_cycle(self, cycle: DevelopmentCycleDraft | dict[str, Any], *, source: str = "development-cycle") -> WriteReport:
         draft = self.draft_development_cycle(cycle)
         return self.record_agent_cycle(draft, source=source)
+
+    def finish_development_task(self, task: dict[str, Any]) -> FinishDevelopmentTaskResult:
+        return self.development_memory_workflow.finish_task(task)
 
     def consolidate_experiences(self, *, dry_run: bool = True, min_confidence: float = 0.85) -> ConsolidationResult:
         return self.consolidator.consolidate(dry_run=dry_run, min_confidence=min_confidence)

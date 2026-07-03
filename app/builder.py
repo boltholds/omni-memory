@@ -3,6 +3,7 @@ from __future__ import annotations
 from domain.llm import ILLMProvider
 from domain.model_ports import IEmbedder, ModelBundle
 from domain.repositories import IFactRepo, IVectorRepo
+from domain.distiller import ISessionMemoryDistiller
 from app.fact_mining import FactExtractor
 from app.memory import OmniMemory
 
@@ -19,6 +20,7 @@ def build_memory(
     llm: ILLMProvider | None = None,
     embedder: IEmbedder | None = None,
     model_bundle: ModelBundle | None = None,
+    distiller: ISessionMemoryDistiller | None = None,
     vector_repo: IVectorRepo | None = None,
     graph_repo: IFactRepo | None = None,
     episodic_repo: EpisodicRepo | None = None,
@@ -48,6 +50,7 @@ def build_memory(
         llm=llm,
         embedder=embedder,
         model_bundle=model_bundle,
+        distiller=distiller,
         vector_repo=vector_repo,
         graph_repo=graph_repo,
         episodic_repo=episodic_repo,

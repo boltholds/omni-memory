@@ -44,9 +44,9 @@ class DevelopmentCycleRecorder:
             avoid_when=parsed.avoid_when,
             confidence=parsed.confidence,
             meta={
-                **parsed.meta,
                 "recorded_from": "development_cycle",
                 "draft": not bool(parsed.lesson),
+                **parsed.meta,
             },
         )
 

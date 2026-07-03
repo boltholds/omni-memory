@@ -40,6 +40,21 @@ def test_mcp_tool_schemas_include_core_memory_tools():
     assert "omni_memory_stats" in names
 
 
+def test_mcp_write_tool_schemas_describe_required_inputs():
+    by_name = {tool["name"]: tool for tool in MCP_TOOL_SCHEMAS}
+
+    write_fact = by_name["omni_memory_write_fact"]["inputSchema"]
+    assert write_fact["required"] == ["subject", "predicate", "object"]
+    assert {"subject", "predicate", "object"} <= set(write_fact["properties"])
+
+    write_skill = by_name["omni_memory_write_skill"]["inputSchema"]
+    assert write_skill["required"] == ["name"]
+    assert {"name", "procedure", "reuse_when"} <= set(write_skill["properties"])
+
+    session_commit = by_name["omni_memory_session_commit"]["inputSchema"]
+    assert {"dry_run", "min_confidence", "clear", "meta"} <= set(session_commit["properties"])
+
+
 def test_mcp_handlers_write_retrieve_context_and_conflicts():
     handlers = build_mcp_handlers(_memory())
 
@@ -234,6 +249,29 @@ def test_mcp_fact_maintenance_retracts_fact_from_current_beliefs():
 
     retrieved = handlers["omni_memory_retrieve"](query="temporary_fact status", k_sem=1)
     assert retrieved["beliefs"] == []
+
+
+def test_mcp_delete_fact_hard_removes_fact_record():
+    handlers = build_mcp_handlers(_memory())
+    handlers["omni_memory_write_items"](
+        items=[
+            {
+                "id": "fact-hard-delete",
+                "type": "fact",
+                "subject": "hard_delete_fact",
+                "predicate": "status",
+                "object": "temporary",
+                "meta": {"confidence": 1.0},
+            }
+        ],
+        source="test",
+    )
+
+    deleted = handlers["omni_memory_delete_fact"](fact_id="fact-hard-delete", hard=True)
+
+    assert deleted["operation"] == "hard_delete"
+    assert deleted["removed"] == 1
+    assert handlers["omni_memory_get_fact"](fact_id="fact-hard-delete")["fact"] is None
 
 
 def test_mcp_decision_records_are_written_listed_and_retrieved_in_context():

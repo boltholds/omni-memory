@@ -68,7 +68,11 @@ def test_byom_bundle_can_supply_llm_and_embedder():
     assert answer.model == "dummy-llm"
 
 
-def test_llm_bundle_can_power_session_distillation_without_explicit_distiller():
+def test_llm_bundle_can_power_session_distillation_without_explicit_distiller(monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "distiller_provider", "inherit")
+
     memory = OmniMemory(
         model_bundle=ModelBundle(
             llm=DistillingLLM(),
