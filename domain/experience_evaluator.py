@@ -28,12 +28,17 @@ class DevelopmentExperienceEvaluator:
     """Deterministic evaluator for development/coding experience records."""
 
     def evaluate(self, experience: ExperienceRecord) -> EvaluationResult:
-        text = _experience_text(experience)
-        success = _contains_any(text, ["success", "passed", "fixed", "works", "green", "зел", "успеш"])
-        failure = _contains_any(text, ["fail", "failed", "error", "regression", "broken", "exception", "ошиб", "пад"])
-        if experience.evaluation.get("success") is True:
+        success_text = _success_text(experience)
+        failure_text = _failure_text(experience)
+        explicit_success = experience.evaluation.get("success")
+
+        success = _contains_any(success_text, ["success", "passed", "fixed", "works", "green", "зел", "успеш"])
+        failure = _contains_any(failure_text, ["fail", "failed", "error", "regression", "broken", "exception", "ошиб", "пад"])
+        if explicit_success is True:
             success = True
-        if experience.evaluation.get("success") is False:
+            failure = False
+        elif explicit_success is False:
+            success = False
             failure = True
 
         success_score = 0.9 if success else 0.35
@@ -162,6 +167,27 @@ def _experience_text(experience: ExperienceRecord) -> str:
             experience.outcome,
             str(experience.evaluation),
             experience.lesson,
+        ]
+    ).casefold()
+
+
+def _success_text(experience: ExperienceRecord) -> str:
+    return " ".join(
+        [
+            experience.decision,
+            " ".join(experience.actions),
+            experience.outcome,
+            str(experience.evaluation),
+            experience.lesson,
+        ]
+    ).casefold()
+
+
+def _failure_text(experience: ExperienceRecord) -> str:
+    return " ".join(
+        [
+            experience.outcome,
+            str(experience.evaluation),
         ]
     ).casefold()
 
