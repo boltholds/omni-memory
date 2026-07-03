@@ -59,7 +59,7 @@ class ExperienceConsolidator:
         experiences = [
             item
             for item in self.experience_repo.list_experiences()
-            if item.confidence >= min_confidence
+            if item.confidence >= min_confidence and _eligible_for_consolidation(item)
         ]
         proposals = [
             *self._skill_proposals(experiences),
@@ -122,7 +122,11 @@ class ExperienceConsolidator:
                 "evidence_ids": evidence_ids,
                 "confidence": confidence,
                 "refs": {"source_experience_ids": evidence_ids},
-                "meta": {"promoted_from": "experience_consolidation", "topic": topic},
+                "meta": {
+                    "promoted_from": "experience_consolidation",
+                    "topic": topic,
+                    **_promotion_scope_meta(items),
+                },
             }
             proposals.append(
                 ConsolidationProposal(
@@ -156,7 +160,11 @@ class ExperienceConsolidator:
                 "evidence_ids": evidence_ids,
                 "confidence": confidence,
                 "refs": {"source_experience_ids": evidence_ids},
-                "meta": {"promoted_from": "experience_consolidation", "topic": topic},
+                "meta": {
+                    "promoted_from": "experience_consolidation",
+                    "topic": topic,
+                    **_promotion_scope_meta([failure, fix]),
+                },
             }
             proposals.append(
                 ConsolidationProposal(
@@ -178,6 +186,49 @@ def _proposal_to_dict(item: ConsolidationProposal) -> dict[str, Any]:
         "confidence": item.confidence,
         "payload": item.payload,
     }
+
+
+def _eligible_for_consolidation(item: ExperienceRecord) -> bool:
+    meta = dict(item.meta or {})
+    scope = _scope(item)
+    if bool(meta.get("exclude_from_consolidation") or scope.get("exclude_from_consolidation")):
+        return False
+    if str(scope.get("durability") or "").lower() in {"ephemeral", "session"}:
+        return False
+    if str(scope.get("environment") or "").lower() in {"test", "benchmark", "sandbox"}:
+        return False
+    return True
+
+
+def _promotion_scope_meta(items: list[ExperienceRecord]) -> dict[str, Any]:
+    scopes = [_scope(item) for item in items]
+    domain_ids = _unique([domain_id for scope in scopes for domain_id in _scope_domain_ids(scope)])
+    environments = {str(scope.get("environment") or "") for scope in scopes if scope.get("environment")}
+    visibilities = {str(scope.get("visibility") or "") for scope in scopes if scope.get("visibility")}
+    scope = {
+        "tenant_id": next((str(scope.get("tenant_id")) for scope in scopes if scope.get("tenant_id")), "default"),
+        "agent_id": next((scope.get("agent_id") for scope in scopes if scope.get("agent_id")), None),
+        "domain_ids": domain_ids,
+        "environment": environments.pop() if len(environments) == 1 else "dev",
+        "durability": "durable",
+        "visibility": visibilities.pop() if len(visibilities) == 1 else "private",
+        "exclude_from_consolidation": False,
+    }
+    return {"scope": scope, "source_experience_scopes": scopes}
+
+
+def _scope(item: ExperienceRecord) -> dict[str, Any]:
+    scope = (item.meta or {}).get("scope") or {}
+    if hasattr(scope, "model_dump"):
+        return scope.model_dump(mode="json")
+    return dict(scope) if isinstance(scope, dict) else {}
+
+
+def _scope_domain_ids(scope: dict[str, Any]) -> list[str]:
+    raw = scope.get("domain_ids") or []
+    if isinstance(raw, str):
+        return [raw]
+    return [str(item) for item in raw if str(item)]
 
 
 def _topic_key(item: ExperienceRecord) -> str:
