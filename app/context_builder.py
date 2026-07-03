@@ -146,6 +146,25 @@ class DecisionsStrategy(BudgetedSectionStrategy):
         ]
 
 
+class RelevantExperienceStrategy(BudgetedSectionStrategy):
+    title = "Relevant Experience"
+
+    def handle(self, state: ContextBuildState) -> ContextBuildState:
+        if state.budget <= 0:
+            return state
+        return super().handle(state)
+
+    def lines(self, bundle: RetrievalBundle) -> List[str]:
+        return [
+            (
+                f"{experience.goal}: lesson={experience.lesson}; "
+                f"reuse_when={', '.join(experience.reuse_when) or 'n/a'} "
+                f"(confidence={experience.confidence:.2f}, id={experience.id})"
+            )
+            for experience in bundle.experiences
+        ]
+
+
 class SemanticNotesStrategy(BudgetedSectionStrategy):
     title = "Semantic Notes"
 
@@ -179,6 +198,7 @@ def _context_strategy_chain() -> List[ContextBuildStrategy]:
         FactsStrategy(),
         EpisodesStrategy(),
         DecisionsStrategy(),
+        RelevantExperienceStrategy(),
         SemanticNotesStrategy(),
         EmptyContextAdvisoryStrategy(),
     ]

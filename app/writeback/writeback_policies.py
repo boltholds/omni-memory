@@ -1,6 +1,6 @@
 
 from typing import Any, Protocol
-from domain.models import (MemoryObject, Fact, Episode, DecisionRecord)
+from domain.models import (MemoryObject, Fact, Episode, DecisionRecord, ExperienceRecord)
 from domain.writeback import (WritebackRawItem, WritebackConversionPolicy, get_item_id, normalize_provenance, clean_meta, DomainMemoryObject)
 from domain.models import Provenance, Fact, Episode, MemoryObject, EpisodeEvent
 from domain.policy import MemoryPolicy
@@ -125,6 +125,34 @@ class DecisionWritebackPolicy:
             decision=str(payload.get("decision") or item.text or ""),
             consequences=list(payload.get("consequences") or []),
             alternatives=list(payload.get("alternatives") or []),
+            refs=dict(payload.get("refs") or {}),
+            provenance=normalize_provenance(item),
+            meta=clean_meta(item),
+        )
+
+
+class ExperienceWritebackPolicy:
+    name = "experience_writeback"
+    kind = "experience"
+
+    def matches(self, item: WritebackRawItem) -> bool:
+        return item.type == "experience"
+
+    def convert(self, item: WritebackRawItem) -> ExperienceRecord:
+        payload = item.payload or {}
+
+        return ExperienceRecord(
+            id=get_item_id(item, prefix="experience"),
+            goal=str(payload.get("goal") or item.summary or ""),
+            context=str(payload.get("context") or item.content or ""),
+            decision=str(payload.get("decision") or ""),
+            actions=list(payload.get("actions") or []),
+            outcome=str(payload.get("outcome") or ""),
+            evaluation=dict(payload.get("evaluation") or {}),
+            lesson=str(payload.get("lesson") or item.text or ""),
+            reuse_when=list(payload.get("reuse_when") or []),
+            avoid_when=list(payload.get("avoid_when") or []),
+            confidence=float(payload.get("confidence") or item.meta.get("confidence") or 0.5),
             refs=dict(payload.get("refs") or {}),
             provenance=normalize_provenance(item),
             meta=clean_meta(item),

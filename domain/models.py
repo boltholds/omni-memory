@@ -65,12 +65,30 @@ class DecisionRecord(BaseModel):
     meta: Dict[str, Any] = Field(default_factory=dict)
 
 
+class ExperienceRecord(BaseModel):
+    id: str
+    goal: str
+    context: str = ""
+    decision: str = ""
+    actions: List[str] = Field(default_factory=list)
+    outcome: str = ""
+    evaluation: Dict[str, Any] = Field(default_factory=dict)
+    lesson: str = ""
+    reuse_when: List[str] = Field(default_factory=list)
+    avoid_when: List[str] = Field(default_factory=list)
+    confidence: float = 0.5
+    refs: Dict[str, Any] = Field(default_factory=dict)
+    provenance: Provenance = Field(default_factory=Provenance)
+    meta: Dict[str, Any] = Field(default_factory=dict)
+
+
 class RetrievalBundle(BaseModel):
     semantic_chunks: List[MemoryObject] = Field(default_factory=list)
     facts: List[Fact] = Field(default_factory=list)
     beliefs: List[FactBelief] = Field(default_factory=list)
     episodes: List[Episode] = Field(default_factory=list)
     decisions: List[DecisionRecord] = Field(default_factory=list)
+    experiences: List[ExperienceRecord] = Field(default_factory=list)
     citations: List[Dict[str, Any]] = Field(default_factory=list)
 
 class ConflictItem(BaseModel):

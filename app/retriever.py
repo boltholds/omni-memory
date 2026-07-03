@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from typing import List, Set
 
-from domain.models import RetrievalBundle, Fact, Episode, DecisionRecord
-from domain.ports import IRetriever, IMemoryReadRepository, IGraphRepository, IEpisodicRepository, IDecisionRepository
+from domain.models import RetrievalBundle, Fact, Episode, DecisionRecord, ExperienceRecord
+from domain.ports import IRetriever, IMemoryReadRepository, IGraphRepository, IEpisodicRepository, IDecisionRepository, IExperienceRepository
 from app.entities import build_entity_stack
 from app.config import settings
 from app.profiling import timed
@@ -98,11 +98,13 @@ class Retriever(IRetriever):
         graph_repo: IGraphRepository,
         episodic_repo: IEpisodicRepository,
         decision_repo: IDecisionRepository | None = None,
+        experience_repo: IExperienceRepository | None = None,
     ) -> None:
         self._vector = vector_repo
         self._graph = graph_repo
         self._episodic = episodic_repo
         self._decisions = decision_repo
+        self._experiences = experience_repo
         self._extractor, self._linker = build_entity_stack(settings.ner_backend, settings.entity_aliases)
 
     def _query_graph_entity(self, entity: str, facts: list[Fact], seen_ids: set[str]) -> list[Fact]:
@@ -171,6 +173,10 @@ class Retriever(IRetriever):
         if self._decisions is not None:
             decisions = self._decisions.search(query, k=k_eps)
 
+        experiences: List[ExperienceRecord] = []
+        if self._experiences is not None:
+            experiences = self._experiences.search(query, k=k_eps)
+
         beliefs = build_fact_beliefs(facts)
 
         return RetrievalBundle(
@@ -179,5 +185,6 @@ class Retriever(IRetriever):
             beliefs=beliefs,
             episodes=episodes,
             decisions=decisions,
+            experiences=experiences,
             citations=[],
         )

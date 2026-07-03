@@ -1,7 +1,7 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import List
-from .models import MemoryObject, Fact, Episode, DecisionRecord, RetrievalBundle, ConflictReport, ContextPack
+from .models import MemoryObject, Fact, Episode, DecisionRecord, ExperienceRecord, RetrievalBundle, ConflictReport, ContextPack
 
 class IMemoryReadRepository(ABC):
     @abstractmethod
@@ -32,6 +32,16 @@ class IDecisionRepository(ABC):
     def list_decisions(self, status: str | None = None, limit: int | None = None) -> List[DecisionRecord]: ...
     @abstractmethod
     def search(self, text: str, k: int = 5) -> List[DecisionRecord]: ...
+
+class IExperienceRepository(ABC):
+    @abstractmethod
+    def save_experience(self, experience: ExperienceRecord) -> None: ...
+    @abstractmethod
+    def get_experience(self, experience_id: str) -> ExperienceRecord | None: ...
+    @abstractmethod
+    def list_experiences(self, limit: int | None = None) -> List[ExperienceRecord]: ...
+    @abstractmethod
+    def search(self, text: str, k: int = 5) -> List[ExperienceRecord]: ...
 
 class IConsistencyEngine(ABC):
     @abstractmethod

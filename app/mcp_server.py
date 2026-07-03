@@ -249,6 +249,67 @@ def build_mcp_app(memory: OmniMemory) -> FastMCP:
         return call("omni_memory_get_decision", decision_id=decision_id)
 
     @server.tool(
+        name="omni_memory_write_experience",
+        description="Save an agent experience record: goal, action, outcome, lesson and reuse conditions.",
+        structured_output=False,
+    )
+    def write_experience(
+        goal: str,
+        lesson: str,
+        context: str = "",
+        decision: str = "",
+        actions: list[str] | None = None,
+        outcome: str = "",
+        evaluation: dict[str, Any] | None = None,
+        reuse_when: list[str] | None = None,
+        avoid_when: list[str] | None = None,
+        confidence: float = 0.5,
+        refs: dict[str, Any] | None = None,
+        source: str = "mcp",
+        meta: dict[str, Any] | None = None,
+    ) -> str:
+        return call(
+            "omni_memory_write_experience",
+            goal=goal,
+            lesson=lesson,
+            context=context,
+            decision=decision,
+            actions=actions or [],
+            outcome=outcome,
+            evaluation=evaluation or {},
+            reuse_when=reuse_when or [],
+            avoid_when=avoid_when or [],
+            confidence=confidence,
+            refs=refs or {},
+            source=source,
+            meta=meta or {},
+        )
+
+    @server.tool(
+        name="omni_memory_list_experiences",
+        description="List agent experience records.",
+        structured_output=False,
+    )
+    def list_experiences(limit: int | None = None) -> str:
+        return call("omni_memory_list_experiences", limit=limit)
+
+    @server.tool(
+        name="omni_memory_get_experience",
+        description="Get an agent experience record by id.",
+        structured_output=False,
+    )
+    def get_experience(experience_id: str) -> str:
+        return call("omni_memory_get_experience", experience_id=experience_id)
+
+    @server.tool(
+        name="omni_memory_search_experiences",
+        description="Search agent experience records by intent, lesson or reuse condition.",
+        structured_output=False,
+    )
+    def search_experiences(query: str, k: int = 5) -> str:
+        return call("omni_memory_search_experiences", query=query, k=k)
+
+    @server.tool(
         name="omni_memory_session_ingest_turn",
         description="Append a turn to the in-process session buffer before session distillation.",
         structured_output=False,
@@ -295,6 +356,7 @@ def build_mcp_app(memory: OmniMemory) -> FastMCP:
         include_facts: bool = True,
         include_episodes: bool = True,
         include_decisions: bool = True,
+        include_experiences: bool = True,
         include_session: bool = True,
         dry_run: bool = False,
     ) -> str:
@@ -304,6 +366,7 @@ def build_mcp_app(memory: OmniMemory) -> FastMCP:
             include_facts=include_facts,
             include_episodes=include_episodes,
             include_decisions=include_decisions,
+            include_experiences=include_experiences,
             include_session=include_session,
             dry_run=dry_run,
         )

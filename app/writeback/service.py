@@ -1,6 +1,6 @@
 from typing import Any, Optional, Protocol, runtime_checkable
 
-from domain.models import Fact, Episode, MemoryObject, DecisionRecord
+from domain.models import Fact, Episode, MemoryObject, DecisionRecord, ExperienceRecord
 from domain.operations import MemoryOperation, PolicyDecision
 
 from domain.writeback import (
@@ -22,6 +22,7 @@ from app.writeback.writeback_policies import (
     EpisodeWritebackPolicy,
     PreferenceWritebackPolicy,
     DecisionWritebackPolicy,
+    ExperienceWritebackPolicy,
     NoteWritebackPolicy,
     WritebackPolicyResolver,
 )
@@ -65,6 +66,12 @@ class DecisionMemoryRepository(Protocol):
         ...
 
 
+@runtime_checkable
+class ExperienceMemoryRepository(Protocol):
+    def save_experience(self, experience: ExperienceRecord) -> None:
+        ...
+
+
 class MemoryRepositoryRouter:
     """
     Роутер сохранения доменных memory objects.
@@ -80,11 +87,13 @@ class MemoryRepositoryRouter:
         graph_repo: GraphMemoryRepository,
         episodic_repo: EpisodicMemoryRepository,
         decision_repo: DecisionMemoryRepository | None = None,
+        experience_repo: ExperienceMemoryRepository | None = None,
     ) -> None:
         self.vector_repo = vector_repo
         self.graph_repo = graph_repo
         self.episodic_repo = episodic_repo
         self.decision_repo = decision_repo
+        self.experience_repo = experience_repo
 
     def save(self, memory_object: DomainMemoryObject) -> None:
         if isinstance(memory_object, Fact):
@@ -99,6 +108,12 @@ class MemoryRepositoryRouter:
             if self.decision_repo is None:
                 raise TypeError("Decision repository is not configured")
             self.decision_repo.save_decision(memory_object)
+            return
+
+        if isinstance(memory_object, ExperienceRecord):
+            if self.experience_repo is None:
+                raise TypeError("Experience repository is not configured")
+            self.experience_repo.save_experience(memory_object)
             return
 
         if isinstance(memory_object, MemoryObject):
@@ -209,6 +224,7 @@ class WriteBackService:
                     EpisodeWritebackPolicy(),
                     PreferenceWritebackPolicy(),
                     DecisionWritebackPolicy(),
+                    ExperienceWritebackPolicy(),
                     NoteWritebackPolicy(),  # always in the end, because she is fallback
                 ]
             )
@@ -233,6 +249,7 @@ class WriteBackService:
             graph_repo=self._repository_router.graph_repo,
             episodic_repo=self._repository_router.episodic_repo,
             decision_repo=self._repository_router.decision_repo,
+            experience_repo=self._repository_router.experience_repo,
         )
 
         for item in request.items:

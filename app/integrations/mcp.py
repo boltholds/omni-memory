@@ -214,6 +214,60 @@ MCP_TOOL_SCHEMAS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "omni_memory_write_experience",
+        "description": "Save an agent experience record: goal, action, outcome, lesson and reuse conditions.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "goal": {"type": "string"},
+                "lesson": {"type": "string"},
+                "context": {"type": "string", "default": ""},
+                "decision": {"type": "string", "default": ""},
+                "actions": {"type": "array", "items": {"type": "string"}, "default": []},
+                "outcome": {"type": "string", "default": ""},
+                "evaluation": {"type": "object", "default": {}},
+                "reuse_when": {"type": "array", "items": {"type": "string"}, "default": []},
+                "avoid_when": {"type": "array", "items": {"type": "string"}, "default": []},
+                "confidence": {"type": "number", "default": 0.5},
+                "refs": {"type": "object", "default": {}},
+                "source": {"type": "string", "default": "mcp"},
+                "meta": {"type": "object", "default": {}},
+            },
+            "required": ["goal", "lesson"],
+        },
+    },
+    {
+        "name": "omni_memory_list_experiences",
+        "description": "List agent experience records.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer"},
+            },
+        },
+    },
+    {
+        "name": "omni_memory_get_experience",
+        "description": "Get an agent experience record by id.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"experience_id": {"type": "string"}},
+            "required": ["experience_id"],
+        },
+    },
+    {
+        "name": "omni_memory_search_experiences",
+        "description": "Search agent experience records by intent, lesson or reuse condition.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "k": {"type": "integer", "default": 5},
+            },
+            "required": ["query"],
+        },
+    },
+    {
         "name": "omni_memory_session_ingest_turn",
         "description": "Append a turn to the in-process session buffer before session distillation.",
         "inputSchema": {
@@ -257,6 +311,7 @@ MCP_TOOL_SCHEMAS: list[dict[str, Any]] = [
                 "include_facts": {"type": "boolean", "default": True},
                 "include_episodes": {"type": "boolean", "default": True},
                 "include_decisions": {"type": "boolean", "default": True},
+                "include_experiences": {"type": "boolean", "default": True},
                 "include_session": {"type": "boolean", "default": True},
                 "dry_run": {"type": "boolean", "default": False},
             },
@@ -388,6 +443,43 @@ def build_mcp_handlers(memory: OmniMemory) -> dict[str, Callable[..., Any]]:
                 else None
             )
         },
+        "omni_memory_write_experience": lambda **kwargs: memory.record_experience(
+            goal=kwargs["goal"],
+            lesson=kwargs["lesson"],
+            context=kwargs.get("context", ""),
+            decision=kwargs.get("decision", ""),
+            actions=kwargs.get("actions") or [],
+            outcome=kwargs.get("outcome", ""),
+            evaluation=kwargs.get("evaluation") or {},
+            reuse_when=kwargs.get("reuse_when") or [],
+            avoid_when=kwargs.get("avoid_when") or [],
+            confidence=kwargs.get("confidence", 0.5),
+            refs=kwargs.get("refs") or {},
+            source=kwargs.get("source", "mcp"),
+            meta=kwargs.get("meta") or {},
+        ).model_dump(),
+        "omni_memory_list_experiences": lambda **kwargs: {
+            "experiences": [
+                experience.model_dump(mode="json")
+                for experience in memory.list_experiences(limit=kwargs.get("limit"))
+            ]
+        },
+        "omni_memory_get_experience": lambda **kwargs: {
+            "experience": (
+                experience.model_dump(mode="json")
+                if (experience := memory.get_experience(kwargs["experience_id"])) is not None
+                else None
+            )
+        },
+        "omni_memory_search_experiences": lambda **kwargs: {
+            "experiences": [
+                experience.model_dump(mode="json")
+                for experience in memory.search_experiences(
+                    kwargs["query"],
+                    k=kwargs.get("k", 5),
+                )
+            ]
+        },
         "omni_memory_session_ingest_turn": lambda **kwargs: _session_ingest_turn(
             memory,
             role=kwargs["role"],
@@ -406,6 +498,7 @@ def build_mcp_handlers(memory: OmniMemory) -> dict[str, Callable[..., Any]]:
             include_facts=kwargs.get("include_facts", True),
             include_episodes=kwargs.get("include_episodes", True),
             include_decisions=kwargs.get("include_decisions", True),
+            include_experiences=kwargs.get("include_experiences", True),
             include_session=kwargs.get("include_session", True),
             dry_run=kwargs.get("dry_run", False),
         ).__dict__,
@@ -432,6 +525,7 @@ def _stats(memory: OmniMemory) -> dict[str, Any]:
         "facts": count(memory.graph_repo),
         "episodes": count(memory.episodic_repo),
         "decisions": count(memory.decision_repo),
+        "experiences": count(memory.experience_repo),
         "session_turns": len(memory._session_turns),
         "llm_configured": memory.llm is not None,
     }
