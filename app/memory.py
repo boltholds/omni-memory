@@ -137,6 +137,7 @@ class OmniMemory:
         self.experience_repo = self.repositories.experience
         self.skill_repo = self.repositories.skill
         self.failure_pattern_repo = self.repositories.failure_pattern
+        self.domain_graph_repo = self.repositories.domain_graph
 
         self.retriever = Retriever(
             self.repositories.vector,
@@ -146,6 +147,7 @@ class OmniMemory:
             self.repositories.experience,
             self.repositories.skill,
             self.repositories.failure_pattern,
+            self.repositories.domain_graph,
         )
         self.consistency = SimpleConsistencyEngine()
         self.orchestrator = Orchestrator(self.retriever, self.consistency)
