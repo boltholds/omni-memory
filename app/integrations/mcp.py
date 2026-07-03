@@ -2,22 +2,21 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from domain.models import Fact, FailurePatternRecord, SkillRecord
+from app.integrations.fact_mining_mcp import FACT_MINING_TOOL_SCHEMA, build_fact_mining_handler
 from app.memory import OmniMemory
+from domain.models import Fact, FailurePatternRecord, SkillRecord
 
 
-def _object_schema(properties: dict[str, Any], required: list[str] | None = None) -> dict[str, Any]:
-    schema = {"type": "object", "properties": properties}
+def _schema(props: dict[str, Any] | None = None, required: list[str] | None = None) -> dict[str, Any]:
+    out: dict[str, Any] = {"type": "object", "properties": props or {}}
     if required:
-        schema["required"] = required
-    return schema
+        out["required"] = required
+    return out
 
 
 def _scope_schema() -> dict[str, Any]:
-    return {
-        "type": "object",
-        "description": "Optional scope-aware retrieval filter.",
-        "properties": {
+    return _schema(
+        {
             "domain_ids": {"type": "array", "items": {"type": "string"}},
             "domains": {"type": "array", "items": {"type": "string"}},
             "environments": {"type": "array", "items": {"type": "string"}},
@@ -29,477 +28,97 @@ def _scope_schema() -> dict[str, Any]:
             "include_ephemeral": {"type": "boolean", "default": True},
             "strict_domains": {"type": "boolean", "default": False},
             "expand_domains": {"type": "boolean", "default": True},
-        },
-        "additionalProperties": True,
-        "default": {},
-    }
+        }
+    )
 
 
-MCP_TOOL_SCHEMAS: list[dict[str, Any]] = [
-    {
-        "name": "omni_memory_write_items",
-        "description": "Save memory items through OmniMemory writeback policies.",
-        "inputSchema": _object_schema(
-            {
-                "items": {"type": "array", "items": {"type": "object"}},
-                "source": {"type": "string", "default": "mcp"},
-                "dry_run": {"type": "boolean", "default": False},
-            },
-            ["items"],
-        ),
-    },
-    {
-        "name": "omni_memory_retrieve",
-        "description": "Retrieve facts, episodes and semantic chunks from OmniMemory.",
-        "inputSchema": _object_schema(
-            {
-                "query": {"type": "string"},
-                "k_sem": {"type": "integer", "default": 5},
-                "k_eps": {"type": "integer", "default": 3},
-                "intent": {"type": "string"},
-                "mode": {"type": "string"},
-                "scope": _scope_schema(),
-            },
-            ["query"],
-        ),
-    },
-    {
-        "name": "omni_memory_ask",
-        "description": "Ask a question using OmniMemory context and the configured LLM.",
-        "inputSchema": _object_schema(
-            {
-                "question": {"type": "string"},
-                "lang": {"type": "string", "default": "en"},
-                "style": {"type": "string", "default": "concise"},
-                "intent": {"type": "string"},
-                "mode": {"type": "string"},
-                "scope": _scope_schema(),
-            },
-            ["question"],
-        ),
-    },
-    {
-        "name": "omni_memory_context",
-        "description": "Build an explainable OmniMemory context pack for a query.",
-        "inputSchema": _object_schema(
-            {
-                "query": {"type": "string", "default": ""},
-                "intent": {"type": "string"},
-                "mode": {"type": "string"},
-                "scope": _scope_schema(),
-            }
-        ),
-    },
-    {
-        "name": "omni_memory_detect_conflicts",
-        "description": "Detect conflicts either for provided facts or for facts retrieved by query.",
-        "inputSchema": _object_schema(
-            {
-                "query": {"type": "string"},
-                "facts": {"type": "array", "items": {"type": "object"}},
-                "scope": _scope_schema(),
-            }
-        ),
-    },
-    {
-        "name": "omni_memory_write_fact",
-        "description": "Save a single structured fact.",
-        "inputSchema": _object_schema(
-            {
-                "subject": {"type": "string"},
-                "predicate": {"type": "string"},
-                "object": {"type": "string"},
-                "source": {"type": "string", "default": "mcp"},
-                "confidence": {"type": "number", "default": 1.0},
-            },
-            ["subject", "predicate", "object"],
-        ),
-    },
-    {
-        "name": "omni_memory_list_facts",
-        "description": "List stored facts with optional filters.",
-        "inputSchema": _object_schema(
-            {
-                "subject": {"type": "string"},
-                "predicate": {"type": "string"},
-                "object": {"type": "string"},
-                "status": {"type": "string"},
-                "limit": {"type": "integer"},
-            }
-        ),
-    },
-    {
-        "name": "omni_memory_get_fact",
-        "description": "Get a stored fact by id.",
-        "inputSchema": _object_schema({"fact_id": {"type": "string"}}, ["fact_id"]),
-    },
-    {
-        "name": "omni_memory_patch_fact",
-        "description": "Patch a stored fact in place through fact maintenance strategies.",
-        "inputSchema": _object_schema(
-            {
-                "fact_id": {"type": "string"},
-                "patch": {"type": "object"},
-                "reason": {"type": "string"},
-                "dry_run": {"type": "boolean", "default": False},
-            },
-            ["fact_id", "patch"],
-        ),
-    },
-    {
-        "name": "omni_memory_retract_fact",
-        "description": "Soft-delete a fact by marking it retracted.",
-        "inputSchema": _object_schema(
-            {
-                "fact_id": {"type": "string"},
-                "reason": {"type": "string"},
-                "dry_run": {"type": "boolean", "default": False},
-            },
-            ["fact_id"],
-        ),
-    },
-    {
-        "name": "omni_memory_supersede_fact",
-        "description": "Create a new current fact and mark an old fact historical.",
-        "inputSchema": _object_schema(
-            {
-                "fact_id": {"type": "string"},
-                "new_fact": {"type": "object"},
-                "reason": {"type": "string"},
-                "source": {"type": "string", "default": "mcp"},
-                "dry_run": {"type": "boolean", "default": False},
-            },
-            ["fact_id", "new_fact"],
-        ),
-    },
-    {
-        "name": "omni_memory_delete_fact",
-        "description": "Delete a fact. Soft delete by default; hard=true removes storage record.",
-        "inputSchema": _object_schema(
-            {
-                "fact_id": {"type": "string"},
-                "hard": {"type": "boolean", "default": False},
-                "reason": {"type": "string"},
-                "dry_run": {"type": "boolean", "default": False},
-            },
-            ["fact_id"],
-        ),
-    },
-    {
-        "name": "omni_memory_write_note",
-        "description": "Save a semantic note.",
-        "inputSchema": _object_schema(
-            {
-                "text": {"type": "string"},
-                "source": {"type": "string", "default": "mcp"},
-                "meta": {"type": "object", "default": {}},
-            },
-            ["text"],
-        ),
-    },
-    {
-        "name": "omni_memory_write_decision",
-        "description": "Save a project decision/ADR record.",
-        "inputSchema": _object_schema(
-            {
-                "title": {"type": "string"},
-                "decision": {"type": "string"},
-                "context": {"type": "string", "default": ""},
-                "consequences": {"type": "array", "items": {"type": "string"}, "default": []},
-                "alternatives": {"type": "array", "items": {"type": "string"}, "default": []},
-                "refs": {"type": "object", "default": {}},
-                "status": {"type": "string", "default": "accepted"},
-                "source": {"type": "string", "default": "mcp"},
-                "meta": {"type": "object", "default": {}},
-            },
-            ["title", "decision"],
-        ),
-    },
-    {"name": "omni_memory_list_decisions", "description": "List project decision/ADR records.", "inputSchema": _object_schema({"status": {"type": "string"}, "limit": {"type": "integer"}})},
-    {"name": "omni_memory_get_decision", "description": "Get a project decision/ADR record by id.", "inputSchema": _object_schema({"decision_id": {"type": "string"}}, ["decision_id"])},
-    {
-        "name": "omni_memory_write_experience",
-        "description": "Save an agent experience record: goal, action, outcome, lesson and reuse conditions.",
-        "inputSchema": _object_schema(
-            {
-                "goal": {"type": "string"},
-                "lesson": {"type": "string"},
-                "context": {"type": "string", "default": ""},
-                "decision": {"type": "string", "default": ""},
-                "actions": {"type": "array", "items": {"type": "string"}, "default": []},
-                "outcome": {"type": "string", "default": ""},
-                "evaluation": {"type": "object", "default": {}},
-                "reuse_when": {"type": "array", "items": {"type": "string"}, "default": []},
-                "avoid_when": {"type": "array", "items": {"type": "string"}, "default": []},
-                "confidence": {"type": "number", "default": 0.5},
-                "refs": {"type": "object", "default": {}},
-                "source": {"type": "string", "default": "mcp"},
-                "meta": {"type": "object", "default": {}},
-            },
-            ["goal", "lesson"],
-        ),
-    },
-    {"name": "omni_memory_list_experiences", "description": "List agent experience records.", "inputSchema": _object_schema({"limit": {"type": "integer"}})},
-    {"name": "omni_memory_get_experience", "description": "Get an agent experience record by id.", "inputSchema": _object_schema({"experience_id": {"type": "string"}}, ["experience_id"])},
-    {"name": "omni_memory_search_experiences", "description": "Search agent experience records by intent, lesson or reuse condition.", "inputSchema": _object_schema({"query": {"type": "string"}, "k": {"type": "integer", "default": 5}}, ["query"])},
-    {
-        "name": "omni_memory_write_skill",
-        "description": "Save a reusable skill record promoted from repeated experience.",
-        "inputSchema": _object_schema(
-            {
-                "name": {"type": "string"},
-                "problem": {"type": "string", "default": ""},
-                "procedure": {"type": "array", "items": {"type": "string"}, "default": []},
-                "reuse_when": {"type": "array", "items": {"type": "string"}, "default": []},
-                "avoid_when": {"type": "array", "items": {"type": "string"}, "default": []},
-                "evidence_ids": {"type": "array", "items": {"type": "string"}, "default": []},
-                "confidence": {"type": "number", "default": 0.5},
-                "source": {"type": "string", "default": "mcp"},
-                "meta": {"type": "object", "default": {}},
-            },
-            ["name"],
-        ),
-    },
-    {"name": "omni_memory_list_skills", "description": "List reusable skill records.", "inputSchema": _object_schema({"limit": {"type": "integer"}})},
-    {"name": "omni_memory_get_skill", "description": "Get a reusable skill record by id.", "inputSchema": _object_schema({"skill_id": {"type": "string"}}, ["skill_id"])},
-    {"name": "omni_memory_search_skills", "description": "Search reusable skill records.", "inputSchema": _object_schema({"query": {"type": "string"}, "k": {"type": "integer", "default": 5}}, ["query"])},
-    {
-        "name": "omni_memory_write_failure_pattern",
-        "description": "Save a reusable failure pattern with symptom, cause, fix and detection hints.",
-        "inputSchema": _object_schema(
-            {
-                "symptom": {"type": "string"},
-                "root_cause": {"type": "string", "default": ""},
-                "fix": {"type": "string", "default": ""},
-                "detection": {"type": "string", "default": ""},
-                "evidence_ids": {"type": "array", "items": {"type": "string"}, "default": []},
-                "confidence": {"type": "number", "default": 0.5},
-                "source": {"type": "string", "default": "mcp"},
-                "meta": {"type": "object", "default": {}},
-            },
-            ["symptom"],
-        ),
-    },
-    {"name": "omni_memory_list_failure_patterns", "description": "List reusable failure pattern records.", "inputSchema": _object_schema({"limit": {"type": "integer"}})},
-    {"name": "omni_memory_get_failure_pattern", "description": "Get a reusable failure pattern record by id.", "inputSchema": _object_schema({"pattern_id": {"type": "string"}}, ["pattern_id"])},
-    {"name": "omni_memory_search_failure_patterns", "description": "Search reusable failure pattern records.", "inputSchema": _object_schema({"query": {"type": "string"}, "k": {"type": "integer", "default": 5}}, ["query"])},
-    {
-        "name": "omni_memory_consolidate_experiences",
-        "description": "Consolidate repeated high-confidence experiences into skill and failure-pattern proposals. Dry-run by default.",
-        "inputSchema": _object_schema(
-            {
-                "dry_run": {"type": "boolean", "default": True},
-                "min_confidence": {"type": "number", "default": 0.85},
-            }
-        ),
-    },
-    {
-        "name": "omni_memory_record_agent_cycle",
-        "description": "Record a completed agent cycle as reusable experience.",
-        "inputSchema": _object_schema(
-            {
-                "goal": {"type": "string"},
-                "plan": {"type": "array", "items": {"type": "string"}, "default": []},
-                "decisions": {"type": "array", "items": {"type": "string"}, "default": []},
-                "actions": {"type": "array", "items": {"type": "string"}, "default": []},
-                "outcome": {"type": "string", "default": ""},
-                "tests": {"type": "array", "items": {"type": "string"}, "default": []},
-                "files": {"type": "array", "items": {"type": "string"}, "default": []},
-                "side_effects": {"type": "array", "items": {"type": "string"}, "default": []},
-                "lesson": {"type": "string"},
-                "reuse_when": {"type": "array", "items": {"type": "string"}, "default": []},
-                "avoid_when": {"type": "array", "items": {"type": "string"}, "default": []},
-                "confidence": {"type": "number", "default": 0.8},
-                "source": {"type": "string", "default": "mcp-agent-cycle"},
-                "meta": {"type": "object", "default": {}},
-            },
-            ["goal", "lesson"],
-        ),
-    },
-    {
-        "name": "omni_memory_draft_development_cycle",
-        "description": "Draft a development cycle as an agent-cycle record without writing memory.",
-        "inputSchema": _object_schema(
-            {
-                "goal": {"type": "string"},
-                "summary": {"type": "string", "default": ""},
-                "changed_files": {"type": "array", "items": {"type": "string"}, "default": []},
-                "commands_run": {"type": "array", "items": {"type": "string"}, "default": []},
-                "tests": {"type": "array", "items": {"type": "string"}, "default": []},
-                "decisions": {"type": "array", "items": {"type": "string"}, "default": []},
-                "outcome": {"type": "string", "default": ""},
-                "lesson": {"type": "string", "default": ""},
-                "reuse_when": {"type": "array", "items": {"type": "string"}, "default": []},
-                "avoid_when": {"type": "array", "items": {"type": "string"}, "default": []},
-                "side_effects": {"type": "array", "items": {"type": "string"}, "default": []},
-                "confidence": {"type": "number", "default": 0.8},
-                "meta": {"type": "object", "default": {}},
-            },
-            ["goal"],
-        ),
-    },
-    {
-        "name": "omni_memory_record_development_cycle",
-        "description": "Record a development cycle as reusable experience.",
-        "inputSchema": _object_schema(
-            {
-                "goal": {"type": "string"},
-                "summary": {"type": "string", "default": ""},
-                "changed_files": {"type": "array", "items": {"type": "string"}, "default": []},
-                "commands_run": {"type": "array", "items": {"type": "string"}, "default": []},
-                "tests": {"type": "array", "items": {"type": "string"}, "default": []},
-                "decisions": {"type": "array", "items": {"type": "string"}, "default": []},
-                "outcome": {"type": "string", "default": ""},
-                "lesson": {"type": "string"},
-                "reuse_when": {"type": "array", "items": {"type": "string"}, "default": []},
-                "avoid_when": {"type": "array", "items": {"type": "string"}, "default": []},
-                "side_effects": {"type": "array", "items": {"type": "string"}, "default": []},
-                "confidence": {"type": "number", "default": 0.8},
-                "source": {"type": "string", "default": "mcp-development-cycle"},
-                "meta": {"type": "object", "default": {}},
-            },
-            ["goal", "lesson"],
-        ),
-    },
-    {"name": "omni_memory_session_ingest_turn", "description": "Append a turn to the in-process session buffer before session distillation.", "inputSchema": _object_schema({"role": {"type": "string"}, "content": {"type": "string"}}, ["role", "content"])},
-    {"name": "omni_memory_session_commit", "description": "Distill buffered session turns into durable memory.", "inputSchema": _object_schema({"source": {"type": "string", "default": "mcp-session"}, "dry_run": {"type": "boolean", "default": False}, "min_confidence": {"type": "number", "default": 0.75}, "clear": {"type": "boolean", "default": True}, "meta": {"type": "object", "default": {}}})},
-    {"name": "omni_memory_session_clear", "description": "Clear buffered session turns without writing memory.", "inputSchema": _object_schema({})},
-    {
-        "name": "omni_memory_clear",
-        "description": "Clear durable OmniMemory stores and/or the in-process session buffer.",
-        "inputSchema": _object_schema(
-            {
-                "include_vectors": {"type": "boolean", "default": True},
-                "include_facts": {"type": "boolean", "default": True},
-                "include_episodes": {"type": "boolean", "default": True},
-                "include_decisions": {"type": "boolean", "default": True},
-                "include_experiences": {"type": "boolean", "default": True},
-                "include_skills": {"type": "boolean", "default": True},
-                "include_failure_patterns": {"type": "boolean", "default": True},
-                "include_session": {"type": "boolean", "default": True},
-                "dry_run": {"type": "boolean", "default": False},
-            }
-        ),
-    },
-    {"name": "omni_memory_stats", "description": "Return lightweight repository counts for the local OmniMemory instance.", "inputSchema": _object_schema({})},
+def _tool(name: str, props: dict[str, Any] | None = None, required: list[str] | None = None) -> dict[str, Any]:
+    return {"name": name, "description": name.replace("_", " "), "inputSchema": _schema(props, required)}
+
+
+_NAMES = [
+    "omni_memory_write_items", "omni_memory_retrieve", "omni_memory_ask", "omni_memory_context", "omni_memory_detect_conflicts", "omni_memory_mine_facts",
+    "omni_memory_write_fact", "omni_memory_list_facts", "omni_memory_get_fact", "omni_memory_patch_fact", "omni_memory_retract_fact", "omni_memory_supersede_fact", "omni_memory_delete_fact",
+    "omni_memory_write_note", "omni_memory_write_decision", "omni_memory_list_decisions", "omni_memory_get_decision",
+    "omni_memory_write_experience", "omni_memory_list_experiences", "omni_memory_get_experience", "omni_memory_search_experiences",
+    "omni_memory_write_skill", "omni_memory_list_skills", "omni_memory_get_skill", "omni_memory_search_skills",
+    "omni_memory_write_failure_pattern", "omni_memory_list_failure_patterns", "omni_memory_get_failure_pattern", "omni_memory_search_failure_patterns",
+    "omni_memory_consolidate_experiences", "omni_memory_record_agent_cycle", "omni_memory_draft_development_cycle", "omni_memory_record_development_cycle",
+    "omni_memory_session_ingest_turn", "omni_memory_session_commit", "omni_memory_session_clear", "omni_memory_clear", "omni_memory_stats",
 ]
+
+MCP_TOOL_SCHEMAS = [_tool(name) for name in _NAMES]
+_BY_NAME = {item["name"]: item for item in MCP_TOOL_SCHEMAS}
+_BY_NAME["omni_memory_retrieve"] = _tool("omni_memory_retrieve", {"query": {"type": "string"}, "k_sem": {"type": "integer", "default": 5}, "k_eps": {"type": "integer", "default": 3}, "intent": {"type": "string"}, "mode": {"type": "string"}, "scope": _scope_schema()}, ["query"])
+_BY_NAME["omni_memory_ask"] = _tool("omni_memory_ask", {"question": {"type": "string"}, "lang": {"type": "string", "default": "en"}, "style": {"type": "string", "default": "concise"}, "intent": {"type": "string"}, "mode": {"type": "string"}, "scope": _scope_schema()}, ["question"])
+_BY_NAME["omni_memory_context"] = _tool("omni_memory_context", {"query": {"type": "string", "default": ""}, "intent": {"type": "string"}, "mode": {"type": "string"}, "scope": _scope_schema()})
+_BY_NAME["omni_memory_detect_conflicts"] = _tool("omni_memory_detect_conflicts", {"query": {"type": "string"}, "facts": {"type": "array", "items": {"type": "object"}}, "scope": _scope_schema()})
+_BY_NAME["omni_memory_mine_facts"] = FACT_MINING_TOOL_SCHEMA
+MCP_TOOL_SCHEMAS = [_BY_NAME[name] for name in _NAMES]
 
 
 def build_mcp_handlers(memory: OmniMemory) -> dict[str, Callable[..., Any]]:
-    def detect_conflicts(**kwargs):
-        raw_facts = kwargs.get("facts")
-        if raw_facts is not None:
-            facts = [Fact.model_validate(item) for item in raw_facts]
-            return memory.consistency.detect_conflicts(facts).model_dump()
+    def detect_conflicts(**kwargs: Any) -> dict[str, Any]:
+        if kwargs.get("facts") is not None:
+            return memory.consistency.detect_conflicts([Fact.model_validate(item) for item in kwargs["facts"]]).model_dump()
         return memory.detect_conflicts(kwargs.get("query"), scope=kwargs.get("scope") or {}).model_dump()
 
     return {
-        "omni_memory_write_items": lambda **kwargs: memory.write_items(kwargs["items"], source=kwargs.get("source", "mcp"), dry_run=kwargs.get("dry_run", False)).model_dump(),
-        "omni_memory_retrieve": lambda **kwargs: memory.retrieve(kwargs["query"], k_sem=kwargs.get("k_sem", 5), k_eps=kwargs.get("k_eps", 3), intent=kwargs.get("intent"), mode=kwargs.get("mode"), scope=kwargs.get("scope") or {}).model_dump(),
-        "omni_memory_ask": lambda **kwargs: memory.ask(kwargs["question"], lang=kwargs.get("lang", "en"), style=kwargs.get("style", "concise"), intent=kwargs.get("intent"), mode=kwargs.get("mode"), scope=kwargs.get("scope") or {}).__dict__,
-        "omni_memory_context": lambda **kwargs: memory.build_context(kwargs.get("query", ""), intent=kwargs.get("intent"), mode=kwargs.get("mode"), scope=kwargs.get("scope") or {}).model_dump(),
+        "omni_memory_write_items": lambda **kw: memory.write_items(kw["items"], source=kw.get("source", "mcp"), dry_run=kw.get("dry_run", False)).model_dump(),
+        "omni_memory_retrieve": lambda **kw: memory.retrieve(kw["query"], k_sem=kw.get("k_sem", 5), k_eps=kw.get("k_eps", 3), intent=kw.get("intent"), mode=kw.get("mode"), scope=kw.get("scope") or {}).model_dump(),
+        "omni_memory_ask": lambda **kw: memory.ask(kw["question"], lang=kw.get("lang", "en"), style=kw.get("style", "concise"), intent=kw.get("intent"), mode=kw.get("mode"), scope=kw.get("scope") or {}).__dict__,
+        "omni_memory_context": lambda **kw: memory.build_context(kw.get("query", ""), intent=kw.get("intent"), mode=kw.get("mode"), scope=kw.get("scope") or {}).model_dump(),
         "omni_memory_detect_conflicts": detect_conflicts,
-        "omni_memory_write_fact": lambda **kwargs: memory.write_fact(kwargs["subject"], kwargs["predicate"], kwargs["object"], source=kwargs.get("source", "mcp"), confidence=kwargs.get("confidence", 1.0)).model_dump(),
-        "omni_memory_list_facts": lambda **kwargs: memory.maintain_facts({"operation": "list", "subject": kwargs.get("subject"), "predicate": kwargs.get("predicate"), "object": kwargs.get("object"), "status": kwargs.get("status"), "limit": kwargs.get("limit")}).model_dump(mode="json"),
-        "omni_memory_get_fact": lambda **kwargs: memory.maintain_facts({"operation": "get", "fact_id": kwargs["fact_id"]}).model_dump(mode="json"),
-        "omni_memory_patch_fact": lambda **kwargs: memory.maintain_facts({"operation": "patch", "fact_id": kwargs["fact_id"], "patch": kwargs.get("patch") or {}, "reason": kwargs.get("reason"), "dry_run": kwargs.get("dry_run", False)}).model_dump(mode="json"),
-        "omni_memory_retract_fact": lambda **kwargs: memory.maintain_facts({"operation": "retract", "fact_id": kwargs["fact_id"], "reason": kwargs.get("reason"), "dry_run": kwargs.get("dry_run", False)}).model_dump(mode="json"),
-        "omni_memory_supersede_fact": lambda **kwargs: memory.maintain_facts({"operation": "supersede", "fact_id": kwargs["fact_id"], "new_fact": kwargs.get("new_fact") or {}, "reason": kwargs.get("reason"), "source": kwargs.get("source", "mcp"), "dry_run": kwargs.get("dry_run", False)}).model_dump(mode="json"),
-        "omni_memory_delete_fact": lambda **kwargs: memory.maintain_facts({"operation": "hard_delete" if kwargs.get("hard", False) else "retract", "fact_id": kwargs["fact_id"], "reason": kwargs.get("reason"), "dry_run": kwargs.get("dry_run", False)}).model_dump(mode="json"),
-        "omni_memory_write_note": lambda **kwargs: memory.write_note(kwargs["text"], source=kwargs.get("source", "mcp"), meta=kwargs.get("meta") or {}).model_dump(),
-        "omni_memory_write_decision": lambda **kwargs: memory.write_decision(title=kwargs["title"], decision=kwargs["decision"], context=kwargs.get("context", ""), consequences=kwargs.get("consequences") or [], alternatives=kwargs.get("alternatives") or [], refs=kwargs.get("refs") or {}, status=kwargs.get("status", "accepted"), source=kwargs.get("source", "mcp"), meta=kwargs.get("meta") or {}).model_dump(),
-        "omni_memory_list_decisions": lambda **kwargs: {"decisions": [decision.model_dump(mode="json") for decision in memory.list_decisions(status=kwargs.get("status"), limit=kwargs.get("limit"))]},
-        "omni_memory_get_decision": lambda **kwargs: {"decision": (decision.model_dump(mode="json") if (decision := memory.get_decision(kwargs["decision_id"])) is not None else None)},
-        "omni_memory_write_experience": lambda **kwargs: memory.record_experience(goal=kwargs["goal"], lesson=kwargs["lesson"], context=kwargs.get("context", ""), decision=kwargs.get("decision", ""), actions=kwargs.get("actions") or [], outcome=kwargs.get("outcome", ""), evaluation=kwargs.get("evaluation") or {}, reuse_when=kwargs.get("reuse_when") or [], avoid_when=kwargs.get("avoid_when") or [], confidence=kwargs.get("confidence", 0.5), refs=kwargs.get("refs") or {}, source=kwargs.get("source", "mcp"), meta=kwargs.get("meta") or {}).model_dump(),
-        "omni_memory_list_experiences": lambda **kwargs: {"experiences": [experience.model_dump(mode="json") for experience in memory.list_experiences(limit=kwargs.get("limit"))]},
-        "omni_memory_get_experience": lambda **kwargs: {"experience": (experience.model_dump(mode="json") if (experience := memory.get_experience(kwargs["experience_id"])) is not None else None)},
-        "omni_memory_search_experiences": lambda **kwargs: {"experiences": [experience.model_dump(mode="json") for experience in memory.search_experiences(kwargs["query"], k=kwargs.get("k", 5))]},
-        "omni_memory_write_skill": lambda **kwargs: _write_skill(memory, **kwargs),
-        "omni_memory_list_skills": lambda **kwargs: {"skills": [skill.model_dump(mode="json") for skill in memory.repositories.skill.list_skills(limit=kwargs.get("limit"))]},
-        "omni_memory_get_skill": lambda **kwargs: {"skill": (skill.model_dump(mode="json") if (skill := memory.repositories.skill.get_skill(kwargs["skill_id"])) is not None else None)},
-        "omni_memory_search_skills": lambda **kwargs: {"skills": [skill.model_dump(mode="json") for skill in memory.repositories.skill.search(kwargs["query"], k=kwargs.get("k", 5))]},
-        "omni_memory_write_failure_pattern": lambda **kwargs: _write_failure_pattern(memory, **kwargs),
-        "omni_memory_list_failure_patterns": lambda **kwargs: {"failure_patterns": [pattern.model_dump(mode="json") for pattern in memory.repositories.failure_pattern.list_failure_patterns(limit=kwargs.get("limit"))]},
-        "omni_memory_get_failure_pattern": lambda **kwargs: {"failure_pattern": (pattern.model_dump(mode="json") if (pattern := memory.repositories.failure_pattern.get_failure_pattern(kwargs["pattern_id"])) is not None else None)},
-        "omni_memory_search_failure_patterns": lambda **kwargs: {"failure_patterns": [pattern.model_dump(mode="json") for pattern in memory.repositories.failure_pattern.search(kwargs["query"], k=kwargs.get("k", 5))]},
-        "omni_memory_consolidate_experiences": lambda **kwargs: memory.consolidate_experiences(dry_run=kwargs.get("dry_run", True), min_confidence=kwargs.get("min_confidence", 0.85)).model_dump(mode="json"),
-        "omni_memory_record_agent_cycle": lambda **kwargs: memory.record_agent_cycle({"goal": kwargs["goal"], "plan": kwargs.get("plan") or [], "decisions": kwargs.get("decisions") or [], "actions": kwargs.get("actions") or [], "outcome": kwargs.get("outcome", ""), "tests": kwargs.get("tests") or [], "files": kwargs.get("files") or [], "side_effects": kwargs.get("side_effects") or [], "lesson": kwargs["lesson"], "reuse_when": kwargs.get("reuse_when") or [], "avoid_when": kwargs.get("avoid_when") or [], "confidence": kwargs.get("confidence", 0.8), "meta": kwargs.get("meta") or {}}, source=kwargs.get("source", "mcp-agent-cycle")).model_dump(),
-        "omni_memory_draft_development_cycle": lambda **kwargs: memory.draft_development_cycle(_development_cycle_payload(kwargs)).model_dump(mode="json"),
-        "omni_memory_record_development_cycle": lambda **kwargs: memory.record_development_cycle(_development_cycle_payload(kwargs), source=kwargs.get("source", "mcp-development-cycle")).model_dump(),
-        "omni_memory_session_ingest_turn": lambda **kwargs: _session_ingest_turn(memory, role=kwargs["role"], content=kwargs["content"]),
-        "omni_memory_session_commit": lambda **kwargs: memory.commit_session(source=kwargs.get("source", "mcp-session"), dry_run=kwargs.get("dry_run", False), meta=kwargs.get("meta") or {}, min_confidence=kwargs.get("min_confidence", 0.75), clear=kwargs.get("clear", True)).model_dump(),
-        "omni_memory_session_clear": lambda **kwargs: _session_clear(memory),
-        "omni_memory_clear": lambda **kwargs: memory.clear(include_vectors=kwargs.get("include_vectors", True), include_facts=kwargs.get("include_facts", True), include_episodes=kwargs.get("include_episodes", True), include_decisions=kwargs.get("include_decisions", True), include_experiences=kwargs.get("include_experiences", True), include_skills=kwargs.get("include_skills", True), include_failure_patterns=kwargs.get("include_failure_patterns", True), include_session=kwargs.get("include_session", True), dry_run=kwargs.get("dry_run", False)).__dict__,
-        "omni_memory_stats": lambda **kwargs: _stats(memory),
+        "omni_memory_mine_facts": build_fact_mining_handler(memory),
+        "omni_memory_write_fact": lambda **kw: memory.write_fact(kw["subject"], kw["predicate"], kw["object"], source=kw.get("source", "mcp"), confidence=kw.get("confidence", 1.0)).model_dump(),
+        "omni_memory_list_facts": lambda **kw: memory.maintain_facts({"operation": "list", "subject": kw.get("subject"), "predicate": kw.get("predicate"), "object": kw.get("object"), "status": kw.get("status"), "limit": kw.get("limit")}).model_dump(mode="json"),
+        "omni_memory_get_fact": lambda **kw: memory.maintain_facts({"operation": "get", "fact_id": kw["fact_id"]}).model_dump(mode="json"),
+        "omni_memory_patch_fact": lambda **kw: memory.maintain_facts({"operation": "patch", "fact_id": kw["fact_id"], "patch": kw.get("patch") or {}, "reason": kw.get("reason"), "dry_run": kw.get("dry_run", False)}).model_dump(mode="json"),
+        "omni_memory_retract_fact": lambda **kw: memory.maintain_facts({"operation": "retract", "fact_id": kw["fact_id"], "reason": kw.get("reason"), "dry_run": kw.get("dry_run", False)}).model_dump(mode="json"),
+        "omni_memory_supersede_fact": lambda **kw: memory.maintain_facts({"operation": "supersede", "fact_id": kw["fact_id"], "new_fact": kw.get("new_fact") or {}, "reason": kw.get("reason"), "source": kw.get("source", "mcp"), "dry_run": kw.get("dry_run", False)}).model_dump(mode="json"),
+        "omni_memory_delete_fact": lambda **kw: memory.maintain_facts({"operation": "retract", "fact_id": kw["fact_id"], "reason": kw.get("reason"), "dry_run": kw.get("dry_run", False)}).model_dump(mode="json"),
+        "omni_memory_write_note": lambda **kw: memory.write_note(kw["text"], source=kw.get("source", "mcp"), meta=kw.get("meta") or {}).model_dump(),
+        "omni_memory_write_decision": lambda **kw: memory.write_decision(title=kw["title"], decision=kw["decision"], context=kw.get("context", ""), consequences=kw.get("consequences") or [], alternatives=kw.get("alternatives") or [], refs=kw.get("refs") or {}, status=kw.get("status", "accepted"), source=kw.get("source", "mcp"), meta=kw.get("meta") or {}).model_dump(),
+        "omni_memory_list_decisions": lambda **kw: {"decisions": [item.model_dump(mode="json") for item in memory.list_decisions(status=kw.get("status"), limit=kw.get("limit"))]},
+        "omni_memory_get_decision": lambda **kw: {"decision": (item.model_dump(mode="json") if (item := memory.get_decision(kw["decision_id"])) is not None else None)},
+        "omni_memory_write_experience": lambda **kw: memory.record_experience(goal=kw["goal"], lesson=kw["lesson"], context=kw.get("context", ""), decision=kw.get("decision", ""), actions=kw.get("actions") or [], outcome=kw.get("outcome", ""), evaluation=kw.get("evaluation") or {}, reuse_when=kw.get("reuse_when") or [], avoid_when=kw.get("avoid_when") or [], confidence=kw.get("confidence", 0.5), refs=kw.get("refs") or {}, source=kw.get("source", "mcp"), meta=kw.get("meta") or {}).model_dump(),
+        "omni_memory_list_experiences": lambda **kw: {"experiences": [item.model_dump(mode="json") for item in memory.list_experiences(limit=kw.get("limit"))]},
+        "omni_memory_get_experience": lambda **kw: {"experience": (item.model_dump(mode="json") if (item := memory.get_experience(kw["experience_id"])) is not None else None)},
+        "omni_memory_search_experiences": lambda **kw: {"experiences": [item.model_dump(mode="json") for item in memory.search_experiences(kw["query"], k=kw.get("k", 5))]},
+        "omni_memory_write_skill": lambda **kw: _write_skill(memory, **kw),
+        "omni_memory_list_skills": lambda **kw: {"skills": [item.model_dump(mode="json") for item in memory.repositories.skill.list_skills(limit=kw.get("limit"))]},
+        "omni_memory_get_skill": lambda **kw: {"skill": (item.model_dump(mode="json") if (item := memory.repositories.skill.get_skill(kw["skill_id"])) is not None else None)},
+        "omni_memory_search_skills": lambda **kw: {"skills": [item.model_dump(mode="json") for item in memory.repositories.skill.search(kw["query"], k=kw.get("k", 5))]},
+        "omni_memory_write_failure_pattern": lambda **kw: _write_failure_pattern(memory, **kw),
+        "omni_memory_list_failure_patterns": lambda **kw: {"failure_patterns": [item.model_dump(mode="json") for item in memory.repositories.failure_pattern.list_failure_patterns(limit=kw.get("limit"))]},
+        "omni_memory_get_failure_pattern": lambda **kw: {"failure_pattern": (item.model_dump(mode="json") if (item := memory.repositories.failure_pattern.get_failure_pattern(kw["pattern_id"])) is not None else None)},
+        "omni_memory_search_failure_patterns": lambda **kw: {"failure_patterns": [item.model_dump(mode="json") for item in memory.repositories.failure_pattern.search(kw["query"], k=kw.get("k", 5))]},
+        "omni_memory_consolidate_experiences": lambda **kw: memory.consolidate_experiences(dry_run=kw.get("dry_run", True), min_confidence=kw.get("min_confidence", 0.85)).model_dump(mode="json"),
+        "omni_memory_record_agent_cycle": lambda **kw: memory.record_agent_cycle({"goal": kw["goal"], "plan": kw.get("plan") or [], "decisions": kw.get("decisions") or [], "actions": kw.get("actions") or [], "outcome": kw.get("outcome", ""), "tests": kw.get("tests") or [], "files": kw.get("files") or [], "side_effects": kw.get("side_effects") or [], "lesson": kw["lesson"], "reuse_when": kw.get("reuse_when") or [], "avoid_when": kw.get("avoid_when") or [], "confidence": kw.get("confidence", 0.8), "meta": kw.get("meta") or {}}, source=kw.get("source", "mcp-agent-cycle")).model_dump(),
+        "omni_memory_draft_development_cycle": lambda **kw: memory.draft_development_cycle(_development_cycle_payload(kw)).model_dump(mode="json"),
+        "omni_memory_record_development_cycle": lambda **kw: memory.record_development_cycle(_development_cycle_payload(kw), source=kw.get("source", "mcp-development-cycle")).model_dump(),
+        "omni_memory_session_ingest_turn": lambda **kw: _session_ingest_turn(memory, role=kw["role"], content=kw["content"]),
+        "omni_memory_session_commit": lambda **kw: memory.commit_session(source=kw.get("source", "mcp-session"), dry_run=kw.get("dry_run", False), meta=kw.get("meta") or {}, min_confidence=kw.get("min_confidence", 0.75), clear=kw.get("clear", True)).model_dump(),
+        "omni_memory_session_clear": lambda **kw: _session_clear(memory),
+        "omni_memory_clear": lambda **kw: memory.clear(include_vectors=kw.get("include_vectors", True), include_facts=kw.get("include_facts", True), include_episodes=kw.get("include_episodes", True), include_decisions=kw.get("include_decisions", True), include_experiences=kw.get("include_experiences", True), include_skills=kw.get("include_skills", True), include_failure_patterns=kw.get("include_failure_patterns", True), include_session=kw.get("include_session", True), dry_run=kw.get("dry_run", False)).__dict__,
+        "omni_memory_stats": lambda **kw: _stats(memory),
     }
 
 
-def _write_skill(memory: OmniMemory, **kwargs) -> dict[str, Any]:
-    result = memory.write_skill_raw(
-        name=kwargs["name"],
-        problem=kwargs.get("problem", ""),
-        procedure=kwargs.get("procedure") or [],
-        reuse_when=kwargs.get("reuse_when") or [],
-        avoid_when=kwargs.get("avoid_when") or [],
-        evidence_ids=kwargs.get("evidence_ids") or [],
-        confidence=kwargs.get("confidence", 0.5),
-        refs=kwargs.get("refs") or {},
-        source=kwargs.get("source", "mcp"),
-        meta=kwargs.get("meta") or {},
-    )
-    skill = _saved_object(result.saved, SkillRecord)
-    return {
-        "saved": result.saved_count,
-        "rejected": result.rejected_count + result.error_count,
-        "reasons": result.reasons,
-        "skill": skill.model_dump(mode="json") if skill else None,
-    }
+def _write_skill(memory: OmniMemory, **kw: Any) -> dict[str, Any]:
+    result = memory.write_skill_raw(name=kw["name"], problem=kw.get("problem", ""), procedure=kw.get("procedure") or [], reuse_when=kw.get("reuse_when") or [], avoid_when=kw.get("avoid_when") or [], evidence_ids=kw.get("evidence_ids") or [], confidence=kw.get("confidence", 0.5), refs=kw.get("refs") or {}, source=kw.get("source", "mcp"), meta=kw.get("meta") or {})
+    item = next((saved for saved in result.saved if isinstance(saved, SkillRecord)), None)
+    return {"saved": result.saved_count, "rejected": result.rejected_count + result.error_count, "reasons": result.reasons, "skill": item.model_dump(mode="json") if item else None}
 
 
-def _write_failure_pattern(memory: OmniMemory, **kwargs) -> dict[str, Any]:
-    result = memory.write_failure_pattern_raw(
-        symptom=kwargs["symptom"],
-        root_cause=kwargs.get("root_cause", ""),
-        fix=kwargs.get("fix", ""),
-        detection=kwargs.get("detection", ""),
-        evidence_ids=kwargs.get("evidence_ids") or [],
-        confidence=kwargs.get("confidence", 0.5),
-        refs=kwargs.get("refs") or {},
-        source=kwargs.get("source", "mcp"),
-        meta=kwargs.get("meta") or {},
-    )
-    pattern = _saved_object(result.saved, FailurePatternRecord)
-    return {
-        "saved": result.saved_count,
-        "rejected": result.rejected_count + result.error_count,
-        "reasons": result.reasons,
-        "failure_pattern": pattern.model_dump(mode="json") if pattern else None,
-    }
+def _write_failure_pattern(memory: OmniMemory, **kw: Any) -> dict[str, Any]:
+    result = memory.write_failure_pattern_raw(symptom=kw["symptom"], root_cause=kw.get("root_cause", ""), fix=kw.get("fix", ""), detection=kw.get("detection", ""), evidence_ids=kw.get("evidence_ids") or [], confidence=kw.get("confidence", 0.5), refs=kw.get("refs") or {}, source=kw.get("source", "mcp"), meta=kw.get("meta") or {})
+    item = next((saved for saved in result.saved if isinstance(saved, FailurePatternRecord)), None)
+    return {"saved": result.saved_count, "rejected": result.rejected_count + result.error_count, "reasons": result.reasons, "failure_pattern": item.model_dump(mode="json") if item else None}
 
 
-def _saved_object(saved: list[Any], expected_type: type) -> Any | None:
-    for item in saved:
-        if isinstance(item, expected_type):
-            return item
-    return None
-
-
-def _development_cycle_payload(kwargs: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "goal": kwargs["goal"],
-        "summary": kwargs.get("summary", ""),
-        "changed_files": kwargs.get("changed_files") or [],
-        "commands_run": kwargs.get("commands_run") or [],
-        "tests": kwargs.get("tests") or [],
-        "decisions": kwargs.get("decisions") or [],
-        "outcome": kwargs.get("outcome", ""),
-        "lesson": kwargs.get("lesson", ""),
-        "reuse_when": kwargs.get("reuse_when") or [],
-        "avoid_when": kwargs.get("avoid_when") or [],
-        "side_effects": kwargs.get("side_effects") or [],
-        "confidence": kwargs.get("confidence", 0.8),
-        "meta": kwargs.get("meta") or {},
-    }
+def _development_cycle_payload(kw: dict[str, Any]) -> dict[str, Any]:
+    return {"goal": kw["goal"], "summary": kw.get("summary", ""), "changed_files": kw.get("changed_files") or [], "commands_run": kw.get("commands_run") or [], "tests": kw.get("tests") or [], "decisions": kw.get("decisions") or [], "outcome": kw.get("outcome", ""), "lesson": kw.get("lesson", ""), "reuse_when": kw.get("reuse_when") or [], "avoid_when": kw.get("avoid_when") or [], "side_effects": kw.get("side_effects") or [], "confidence": kw.get("confidence", 0.8), "meta": kw.get("meta") or {}}
 
 
 def _session_ingest_turn(memory: OmniMemory, *, role: str, content: str) -> dict[str, Any]:
@@ -513,8 +132,4 @@ def _session_clear(memory: OmniMemory) -> dict[str, Any]:
 
 
 def _stats(memory: OmniMemory) -> dict[str, Any]:
-    return {
-        **memory.repository_stats(),
-        "session_turns": len(memory._session_turns),
-        "llm_configured": memory.llm is not None,
-    }
+    return {**memory.repository_stats(), "session_turns": len(memory._session_turns), "llm_configured": memory.llm is not None}
