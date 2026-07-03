@@ -142,6 +142,7 @@ class OmniMemory:
         self.skill_repo = self.repositories.skill
         self.failure_pattern_repo = self.repositories.failure_pattern
         self.domain_graph_repo = self.repositories.domain_graph
+        self.reranker = bundle.reranker
 
         self.retriever = Retriever(
             self.repositories.vector,
@@ -152,6 +153,7 @@ class OmniMemory:
             self.repositories.skill,
             self.repositories.failure_pattern,
             self.repositories.domain_graph,
+            self.reranker,
         )
         self.consistency = SimpleConsistencyEngine()
         self.orchestrator = Orchestrator(self.retriever, self.consistency)
@@ -165,7 +167,6 @@ class OmniMemory:
         self.development_memory_workflow = DevelopmentMemoryWorkflow(self)
         self.writeback_service = build_writeback_service(repositories=self.repositories, reject_conflicts=reject_conflicts)
         self._session_turns: list[SessionTurn] = []
-        self.reranker = bundle.reranker
         self.prompt_renderer = PromptRenderer()
         self.llm = llm if llm is not None else (bundle.llm or (build_llm() if use_llm else None))
         self.distiller = distiller or bundle.distiller or build_session_distiller(existing_llm=self.llm)
@@ -220,6 +221,12 @@ class OmniMemory:
     def search_experiences(self, query: str, *, k: int = 5) -> list[ExperienceRecord]:
         return self.experience_repo.search(query, k=k)
 
+    def start_development_task(self, *, goal: str, context: str = "", constraints: list[str] | None = None, files: list[str] | None = None, source: str = "development-workflow"):
+        return self.development_memory_workflow.start_task(goal=goal, context=context, constraints=constraints, files=files, source=source)
+
+    def finish_development_task(self, *, task_id: str | None = None, outcome: str, tests: list[str] | None = None, changed_files: list[str] | None = None, lesson: str = "", decisions: list[str] | None = None, commands_run: list[str] | None = None, side_effects: list[str] | None = None, confidence: float = 0.8, source: str = "development-workflow") -> FinishDevelopmentTaskResult:
+        return self.development_memory_workflow.finish_task(task_id=task_id, outcome=outcome, tests=tests, changed_files=changed_files, lesson=lesson, decisions=decisions, commands_run=commands_run, side_effects=side_effects, confidence=confidence, source=source)
+
     def record_agent_cycle(self, cycle: AgentCycleRecord | dict[str, Any], *, source: str = "agent-cycle") -> WriteReport:
         return self.command_interpreter.execute(RecordAgentCycleCommand(cycle=cycle, source=source))
 
@@ -229,9 +236,6 @@ class OmniMemory:
     def record_development_cycle(self, cycle: DevelopmentCycleDraft | dict[str, Any], *, source: str = "development-cycle") -> WriteReport:
         draft = self.draft_development_cycle(cycle)
         return self.record_agent_cycle(draft, source=source)
-
-    def finish_development_task(self, task: dict[str, Any]) -> FinishDevelopmentTaskResult:
-        return self.development_memory_workflow.finish_task(task)
 
     def consolidate_experiences(self, *, dry_run: bool = True, min_confidence: float = 0.85) -> ConsolidationResult:
         return self.consolidator.consolidate(dry_run=dry_run, min_confidence=min_confidence)
