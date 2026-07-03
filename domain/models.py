@@ -1,11 +1,56 @@
 from __future__ import annotations
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, Dict, List, Literal, Optional, TypedDict
 from pydantic import BaseModel, Field
 
 class Provenance(BaseModel):
     source: str = "user"
     time: Optional[float] = None  # epoch seconds
     meta: Dict[str, Any] = Field(default_factory=dict)
+
+
+class MemoryScope(BaseModel):
+    tenant_id: str = "default"
+    agent_id: str | None = None
+    domain_ids: List[str] = Field(default_factory=list)
+    environment: Literal["prod", "dev", "test", "benchmark", "sandbox"] = "dev"
+    durability: Literal["durable", "ephemeral", "session"] = "durable"
+    visibility: Literal["private", "shared", "global"] = "private"
+    exclude_from_consolidation: bool = False
+
+
+class DomainNode(BaseModel):
+    id: str
+    name: str
+    kind: Literal[
+        "project",
+        "subdomain",
+        "knowledge_area",
+        "environment",
+        "artifact_group",
+        "team",
+        "product",
+    ] = "knowledge_area"
+    aliases: List[str] = Field(default_factory=list)
+    meta: Dict[str, Any] = Field(default_factory=dict)
+
+
+class DomainLink(BaseModel):
+    source_id: str
+    relation: Literal[
+        "belongs_to",
+        "has_subdomain",
+        "related_to",
+        "depends_on",
+        "shared_with",
+        "applies_to",
+        "derived_from",
+        "verified_by",
+        "supersedes",
+    ]
+    target_id: str
+    confidence: float = 1.0
+    meta: Dict[str, Any] = Field(default_factory=dict)
+
 
 class MemoryObject(BaseModel):
     id: str
