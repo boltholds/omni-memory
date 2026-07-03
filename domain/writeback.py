@@ -3,13 +3,30 @@ import hashlib
 import json
 import re
 
-from typing import Any, Dict, Literal, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 from pydantic import BaseModel, Field, ConfigDict
-from domain.models import Fact, Episode, DecisionRecord, ExperienceRecord, Provenance, MemoryObject
+from domain.models import (
+    DecisionRecord,
+    Episode,
+    ExperienceRecord,
+    Fact,
+    FailurePatternRecord,
+    MemoryObject,
+    Provenance,
+    SkillRecord,
+)
 from domain.operations import MemoryOperation, PolicyDecision
 
 
-DomainMemoryObject = MemoryObject | Fact | Episode | DecisionRecord | ExperienceRecord
+DomainMemoryObject = (
+    MemoryObject
+    | Fact
+    | Episode
+    | DecisionRecord
+    | ExperienceRecord
+    | SkillRecord
+    | FailurePatternRecord
+)
 
 
 class WritebackContext(BaseModel):
@@ -35,6 +52,8 @@ class WritebackContext(BaseModel):
     episodic_repo: Any | None = None
     decision_repo: Any | None = None
     experience_repo: Any | None = None
+    skill_repo: Any | None = None
+    failure_pattern_repo: Any | None = None
 
     seen_note_signatures: set[str] = Field(default_factory=set)
 
@@ -60,13 +79,12 @@ class WritebackRawItem(BaseModel):
     summary: str | None = None
     events: list[dict[str, Any]] | None = None
 
-    provenance:  Provenance | None = None
+    provenance: Provenance | None = None
     meta: dict[str, Any] = Field(default_factory=dict)
-    
 
 
 class WritebackSavedItem(BaseModel):
-    kind: Literal["note", "fact", "episode", "decision", "experience"]
+    kind: Literal["note", "fact", "episode", "decision", "experience", "skill", "failure_pattern"]
     id: str
 
 
@@ -75,7 +93,6 @@ class WritebackRejectedItem(BaseModel):
     id: str | None = None
     reason: str
     detail: str | None = None
-
 
 
 class WritebackDecision(BaseModel):
@@ -203,9 +220,6 @@ class WritebackRequest(BaseModel):
     meta: dict[str, Any] = Field(default_factory=dict)
 
 
-
-
-
 @runtime_checkable
 class WritebackConversionPolicy(Protocol):
     name: str
@@ -214,9 +228,8 @@ class WritebackConversionPolicy(Protocol):
     def matches(self, item: WritebackRawItem) -> bool:
         ...
 
-    def convert(self, item: WritebackRawItem) -> MemoryObject:
+    def convert(self, item: WritebackRawItem) -> DomainMemoryObject:
         ...
-
 
 
 @runtime_checkable
@@ -229,6 +242,7 @@ class MemoryWritePolicy(Protocol):
         context: WritebackContext,
     ) -> WritebackDecision:
         ...
+
 
 # Временно для совместимости со старым кодом:
 WriteReport = WritebackResult
@@ -259,8 +273,8 @@ def get_item_id(item: WritebackRawItem, *, prefix: str) -> str:
         prefix,
         item.model_dump(exclude_none=True),
     )
-    
-    
+
+
 def get_memory_kind(memory_object: DomainMemoryObject | None) -> str | None:
     if memory_object is None:
         return None
@@ -276,6 +290,12 @@ def get_memory_kind(memory_object: DomainMemoryObject | None) -> str | None:
 
     if isinstance(memory_object, ExperienceRecord):
         return "experience"
+
+    if isinstance(memory_object, SkillRecord):
+        return "skill"
+
+    if isinstance(memory_object, FailurePatternRecord):
+        return "failure_pattern"
 
     if isinstance(memory_object, MemoryObject):
         return memory_object.type
@@ -307,6 +327,39 @@ def extract_text(memory_object: DomainMemoryObject) -> str:
                 parts.append(event.summary)
 
         return "\n".join(part for part in parts if part)
+
+    if isinstance(memory_object, DecisionRecord):
+        return "\n".join(
+            part
+            for part in [memory_object.title, memory_object.context, memory_object.decision]
+            if part
+        )
+
+    if isinstance(memory_object, ExperienceRecord):
+        return "\n".join(
+            part
+            for part in [memory_object.goal, memory_object.context, memory_object.outcome, memory_object.lesson]
+            if part
+        )
+
+    if isinstance(memory_object, SkillRecord):
+        return "\n".join(
+            part
+            for part in [memory_object.name, memory_object.problem, *memory_object.procedure]
+            if part
+        )
+
+    if isinstance(memory_object, FailurePatternRecord):
+        return "\n".join(
+            part
+            for part in [
+                memory_object.symptom,
+                memory_object.root_cause,
+                memory_object.fix,
+                memory_object.detection,
+            ]
+            if part
+        )
 
     return ""
 
