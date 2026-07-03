@@ -9,6 +9,10 @@ def _memory():
     return build_memory(use_llm=False, embedder=HashEmbedder())
 
 
+def _schema(name: str) -> dict:
+    return next(tool for tool in MCP_TOOL_SCHEMAS if tool["name"] == name)
+
+
 def test_mcp_schemas_include_cognitive_memory_tools():
     names = {tool["name"] for tool in MCP_TOOL_SCHEMAS}
 
@@ -21,6 +25,25 @@ def test_mcp_schemas_include_cognitive_memory_tools():
     assert "omni_memory_get_failure_pattern" in names
     assert "omni_memory_search_failure_patterns" in names
     assert "omni_memory_consolidate_experiences" in names
+
+
+def test_mcp_retrieval_schemas_accept_scope_filters():
+    for tool_name in [
+        "omni_memory_retrieve",
+        "omni_memory_ask",
+        "omni_memory_context",
+        "omni_memory_detect_conflicts",
+    ]:
+        properties = _schema(tool_name)["inputSchema"]["properties"]
+        assert "scope" in properties
+        scope_props = properties["scope"]["properties"]
+        assert "domain_ids" in scope_props
+        assert "environments" in scope_props
+        assert "durabilities" in scope_props
+        assert "memory_types" in scope_props
+        assert "include_ephemeral" in scope_props
+        assert "strict_domains" in scope_props
+        assert "expand_domains" in scope_props
 
 
 def test_skill_memory_write_list_get_and_search():
@@ -72,6 +95,73 @@ def test_failure_pattern_memory_write_list_get_and_search():
 
     searched = handlers["omni_memory_search_failure_patterns"](query="collection package", k=5)
     assert searched["failure_patterns"][0]["id"] == pattern_id
+
+
+def test_mcp_retrieve_handler_applies_scope_filters():
+    handlers = build_mcp_handlers(_memory())
+
+    handlers["omni_memory_write_skill"](
+        name="Fix dependency issue",
+        problem="Test dependency issue",
+        procedure=["Use test-only workaround"],
+        reuse_when=["dependency issue"],
+        confidence=0.9,
+        source="test",
+    )
+    handlers["omni_memory_write_skill"](
+        name="Fix dependency issue",
+        problem="Durable dependency issue",
+        procedure=["Use durable fix"],
+        reuse_when=["dependency issue"],
+        confidence=0.9,
+        source="codex-dev",
+        meta={"domain_ids": ["domain:project:omni-memory"]},
+    )
+
+    result = handlers["omni_memory_retrieve"](
+        query="dependency issue",
+        intent="write_code",
+        k_eps=5,
+        scope={"memory_types": ["skill"], "include_ephemeral": False},
+    )
+
+    assert len(result["skills"]) == 1
+    assert result["skills"][0]["meta"]["scope"]["durability"] == "durable"
+    assert result["semantic_chunks"] == []
+    assert result["failure_patterns"] == []
+
+
+def test_mcp_context_handler_applies_scope_filters():
+    handlers = build_mcp_handlers(_memory())
+
+    handlers["omni_memory_write_skill"](
+        name="Fix dependency issue",
+        problem="Test dependency issue",
+        procedure=["Use test-only workaround"],
+        reuse_when=["dependency issue"],
+        confidence=0.9,
+        source="test",
+    )
+    handlers["omni_memory_write_skill"](
+        name="Fix dependency issue",
+        problem="Durable dependency issue",
+        procedure=["Use durable fix"],
+        reuse_when=["dependency issue"],
+        confidence=0.9,
+        source="codex-dev",
+        meta={"domain_ids": ["domain:project:omni-memory"]},
+    )
+
+    context = handlers["omni_memory_context"](
+        query="dependency issue",
+        intent="write_code",
+        scope={"memory_types": ["skill"], "include_ephemeral": False},
+    )
+
+    sections = {section["title"]: section["body"] for section in context["sections"]}
+    assert "Skills" in sections
+    assert "durable" in sections["Skills"].lower()
+    assert "test-only" not in sections["Skills"].lower()
 
 
 def test_cognitive_memory_writes_go_through_writeback_policies():
