@@ -179,6 +179,106 @@ def test_domain_aware_retrieval_downranks_test_ephemeral_memory():
     assert result.skills[-1].meta["scope"]["environment"] == "test"
 
 
+def test_scope_retrieval_strict_domain_filter_keeps_only_requested_domain():
+    memory = _memory()
+    omni = memory.domain_graph_repo.upsert_node(DomainNode(id=domain_id("project", "omni-memory"), kind="project", name="OmniMemory"))
+    persona = memory.domain_graph_repo.upsert_node(DomainNode(id=domain_id("project", "persona-ai"), kind="project", name="Persona AI"))
+
+    memory.write_skill(
+        name="Fix dependency issue",
+        problem="Persona dependency issue",
+        procedure=["Inspect Persona dependencies"],
+        reuse_when=["dependency issue"],
+        confidence=0.9,
+        meta={"domain_ids": [persona.id]},
+        source="codex-dev",
+    )
+    memory.write_skill(
+        name="Fix dependency issue",
+        problem="OmniMemory dependency issue",
+        procedure=["Inspect OmniMemory dependencies"],
+        reuse_when=["dependency issue"],
+        confidence=0.9,
+        meta={"domain_ids": [omni.id]},
+        source="codex-dev",
+    )
+
+    result = memory.retrieve(
+        "dependency issue",
+        intent="write_code",
+        k_eps=5,
+        scope={"domain_ids": [omni.id], "strict_domains": True},
+    )
+
+    assert [skill.meta["scope"]["domain_ids"] for skill in result.skills] == [[omni.id]]
+
+
+def test_scope_retrieval_environment_and_ephemeral_filters():
+    memory = _memory()
+
+    memory.write_skill(
+        name="Fix dependency issue",
+        problem="Test dependency issue",
+        procedure=["Use test-only workaround"],
+        reuse_when=["dependency issue"],
+        confidence=0.9,
+        source="test",
+    )
+    memory.write_skill(
+        name="Fix dependency issue",
+        problem="Durable dependency issue",
+        procedure=["Use durable fix"],
+        reuse_when=["dependency issue"],
+        confidence=0.9,
+        source="codex-dev",
+    )
+
+    dev_only = memory.retrieve(
+        "dependency issue",
+        intent="write_code",
+        k_eps=5,
+        scope={"environments": ["dev"]},
+    )
+    no_ephemeral = memory.retrieve(
+        "dependency issue",
+        intent="write_code",
+        k_eps=5,
+        scope={"include_ephemeral": False},
+    )
+
+    assert len(dev_only.skills) == 1
+    assert dev_only.skills[0].meta["scope"]["environment"] == "dev"
+    assert len(no_ephemeral.skills) == 1
+    assert no_ephemeral.skills[0].meta["scope"]["durability"] == "durable"
+
+
+def test_scope_retrieval_memory_type_filter_disables_unrequested_channels():
+    memory = _memory()
+
+    memory.write_skill(
+        name="Fix dependency issue",
+        problem="Dependency issue",
+        procedure=["Use durable fix"],
+        reuse_when=["dependency issue"],
+        confidence=0.9,
+        source="codex-dev",
+    )
+    memory.write_note("Dependency issue notes should be hidden when only skills are requested.", source="codex-dev")
+
+    result = memory.retrieve(
+        "dependency issue",
+        intent="write_code",
+        k_eps=5,
+        k_sem=5,
+        scope={"memory_types": ["skill"]},
+    )
+
+    assert result.skills
+    assert result.semantic_chunks == []
+    assert result.facts == []
+    assert result.experiences == []
+
+
 def test_consolidation_excludes_test_and_ephemeral_experiences():
     memory = _memory()
 
