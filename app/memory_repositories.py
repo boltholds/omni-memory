@@ -7,6 +7,7 @@ from app.config import settings
 from domain.repositories import IFactRepo
 from infra.repo.cognitive_repo import FailurePatternRepo, SkillRepo
 from infra.repo.decision_repo import DecisionRepo
+from infra.repo.domain_graph_repo import DomainGraphRepo
 from infra.repo.episodic_repo import EpisodicRepo
 from infra.repo.experience_repo import ExperienceRepo
 from infra.repo.graph_repo import GraphRepo
@@ -35,6 +36,8 @@ class MemoryRepositoryCounts:
     experiences: int | None = None
     skills: int | None = None
     failure_patterns: int | None = None
+    domain_nodes: int | None = None
+    domain_links: int | None = None
 
 
 @dataclass(frozen=True)
@@ -99,6 +102,7 @@ class MemoryRepositories:
     experience: Any
     skill: Any
     failure_pattern: Any
+    domain_graph: Any
 
     def count(self) -> MemoryRepositoryCounts:
         return MemoryRepositoryCounts(
@@ -109,6 +113,8 @@ class MemoryRepositories:
             experiences=_repo_count(self.experience),
             skills=_repo_count(self.skill),
             failure_patterns=_repo_count(self.failure_pattern),
+            domain_nodes=_repo_count(self.domain_graph),
+            domain_links=_repo_link_count(self.domain_graph),
         )
 
     def clear(
@@ -151,6 +157,7 @@ def build_memory_repositories(
     experience_repo: Any | None = None,
     skill_repo: Any | None = None,
     failure_pattern_repo: Any | None = None,
+    domain_graph_repo: Any | None = None,
 ) -> MemoryRepositories:
     return MemoryRepositories(
         vector=vector_repo or VectorStoreRepo(embedder=embedder),
@@ -160,11 +167,16 @@ def build_memory_repositories(
         experience=experience_repo or ExperienceRepo(),
         skill=skill_repo or SkillRepo(),
         failure_pattern=failure_pattern_repo or FailurePatternRepo(),
+        domain_graph=domain_graph_repo or DomainGraphRepo(),
     )
 
 
 def _repo_count(repo: Any) -> int | None:
     return int(repo.count()) if hasattr(repo, "count") else None
+
+
+def _repo_link_count(repo: Any) -> int | None:
+    return int(repo.link_count()) if hasattr(repo, "link_count") else None
 
 
 def _report_count(value: int | None, *, include: bool) -> int:
