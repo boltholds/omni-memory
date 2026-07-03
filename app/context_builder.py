@@ -6,7 +6,7 @@ from typing import List, Protocol, Tuple
 from app.config import settings
 from app.memory_planner import MemoryPlanner
 from app.tokenizer import build_tokenizer
-from domain.models import ContextSection,ContextPack,RetrievalBundle
+from domain.models import ContextSection, ContextPack, RetrievalBundle
 from domain.ports import IConsistencyEngine
 
 _tok = build_tokenizer(settings.tokenizer_backend, settings.tokenizer_model)
@@ -22,9 +22,7 @@ def _take_lines_up_to_budget(lines: List[str], budget: int) -> Tuple[List[str], 
             out.append(line)
             used += c
         else:
-            # частично усечём строку приблизительно по словам — дешёво и эффективно
             parts = (line or "").split()
-            # бинарный поиск по количеству слов, чтобы уложиться по токенам
             lo, hi, best = 0, len(parts), 0
             while lo <= hi:
                 mid = (lo + hi) // 2
@@ -175,6 +173,47 @@ class RelevantExperienceStrategy(BudgetedSectionStrategy):
         ]
 
 
+class SkillsStrategy(BudgetedSectionStrategy):
+    key = "skills"
+    title = "Skills"
+
+    def handle(self, state: ContextBuildState) -> ContextBuildState:
+        if state.budget <= 0:
+            return state
+        return super().handle(state)
+
+    def lines(self, bundle: RetrievalBundle) -> List[str]:
+        return [
+            (
+                f"{skill.name}: problem={skill.problem or 'n/a'}; "
+                f"procedure={' -> '.join(skill.procedure) or 'n/a'}; "
+                f"reuse_when={', '.join(skill.reuse_when) or 'n/a'} "
+                f"(confidence={skill.confidence:.2f}, id={skill.id})"
+            )
+            for skill in bundle.skills
+        ]
+
+
+class FailurePatternsStrategy(BudgetedSectionStrategy):
+    key = "failure_patterns"
+    title = "Failure Patterns"
+
+    def handle(self, state: ContextBuildState) -> ContextBuildState:
+        if state.budget <= 0:
+            return state
+        return super().handle(state)
+
+    def lines(self, bundle: RetrievalBundle) -> List[str]:
+        return [
+            (
+                f"symptom={pattern.symptom}; root_cause={pattern.root_cause or 'n/a'}; "
+                f"fix={pattern.fix or 'n/a'}; detection={pattern.detection or 'n/a'} "
+                f"(confidence={pattern.confidence:.2f}, id={pattern.id})"
+            )
+            for pattern in bundle.failure_patterns
+        ]
+
+
 class SemanticNotesStrategy(BudgetedSectionStrategy):
     key = "semantic_notes"
     title = "Semantic Notes"
@@ -214,19 +253,14 @@ def _context_strategy_chain(intent: str | None = None) -> List[ContextBuildStrat
             EpisodesStrategy(),
             DecisionsStrategy(),
             RelevantExperienceStrategy(),
+            SkillsStrategy(),
+            FailurePatternsStrategy(),
             SemanticNotesStrategy(),
         ]
     }
     profile = MemoryPlanner().profile(intent)
-    ordered = [
-        strategies[key]
-        for key in profile.context_sections
-        if key in strategies
-    ]
-    return [
-        *ordered,
-        EmptyContextAdvisoryStrategy(),
-    ]
+    ordered = [strategies[key] for key in profile.context_sections if key in strategies]
+    return [*ordered, EmptyContextAdvisoryStrategy()]
 
 
 def build_context(
@@ -235,10 +269,6 @@ def build_context(
     consistency: IConsistencyEngine | None = None,
     intent: str | None = None,
 ) -> Tuple[ContextPack, List[str]]:
-    """
-    Собираем секции в порядке приоритета с учётом бюджета.
-    Возвращает ContextPack и список advisories.
-    """
     state = ContextBuildState(bundle=bundle, budget=max_tokens, consistency=consistency, intent=intent)
 
     for strategy in _context_strategy_chain(intent):
@@ -259,10 +289,7 @@ def _format_belief_line(belief) -> str:
     )
 
     if belief.alternatives:
-        alternatives = ", ".join(
-            f"{fact.object} [{fact.id}]"
-            for fact in belief.alternatives[:5]
-        )
+        alternatives = ", ".join(f"{fact.object} [{fact.id}]" for fact in belief.alternatives[:5])
         line += f"; historical/alternative: {alternatives}"
 
     return line
