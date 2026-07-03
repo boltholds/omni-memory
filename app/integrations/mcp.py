@@ -268,6 +268,30 @@ MCP_TOOL_SCHEMAS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "omni_memory_record_agent_cycle",
+        "description": "Record a completed agent cycle as reusable experience.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "goal": {"type": "string"},
+                "plan": {"type": "array", "items": {"type": "string"}, "default": []},
+                "decisions": {"type": "array", "items": {"type": "string"}, "default": []},
+                "actions": {"type": "array", "items": {"type": "string"}, "default": []},
+                "outcome": {"type": "string", "default": ""},
+                "tests": {"type": "array", "items": {"type": "string"}, "default": []},
+                "files": {"type": "array", "items": {"type": "string"}, "default": []},
+                "side_effects": {"type": "array", "items": {"type": "string"}, "default": []},
+                "lesson": {"type": "string"},
+                "reuse_when": {"type": "array", "items": {"type": "string"}, "default": []},
+                "avoid_when": {"type": "array", "items": {"type": "string"}, "default": []},
+                "confidence": {"type": "number", "default": 0.8},
+                "source": {"type": "string", "default": "mcp-agent-cycle"},
+                "meta": {"type": "object", "default": {}},
+            },
+            "required": ["goal", "lesson"],
+        },
+    },
+    {
         "name": "omni_memory_session_ingest_turn",
         "description": "Append a turn to the in-process session buffer before session distillation.",
         "inputSchema": {
@@ -480,6 +504,24 @@ def build_mcp_handlers(memory: OmniMemory) -> dict[str, Callable[..., Any]]:
                 )
             ]
         },
+        "omni_memory_record_agent_cycle": lambda **kwargs: memory.record_agent_cycle(
+            {
+                "goal": kwargs["goal"],
+                "plan": kwargs.get("plan") or [],
+                "decisions": kwargs.get("decisions") or [],
+                "actions": kwargs.get("actions") or [],
+                "outcome": kwargs.get("outcome", ""),
+                "tests": kwargs.get("tests") or [],
+                "files": kwargs.get("files") or [],
+                "side_effects": kwargs.get("side_effects") or [],
+                "lesson": kwargs["lesson"],
+                "reuse_when": kwargs.get("reuse_when") or [],
+                "avoid_when": kwargs.get("avoid_when") or [],
+                "confidence": kwargs.get("confidence", 0.8),
+                "meta": kwargs.get("meta") or {},
+            },
+            source=kwargs.get("source", "mcp-agent-cycle"),
+        ).model_dump(),
         "omni_memory_session_ingest_turn": lambda **kwargs: _session_ingest_turn(
             memory,
             role=kwargs["role"],
@@ -517,15 +559,8 @@ def _session_clear(memory: OmniMemory) -> dict[str, Any]:
 
 
 def _stats(memory: OmniMemory) -> dict[str, Any]:
-    def count(repo: Any) -> int | None:
-        return repo.count() if hasattr(repo, "count") else None
-
     return {
-        "vector_objects": count(memory.vector_repo),
-        "facts": count(memory.graph_repo),
-        "episodes": count(memory.episodic_repo),
-        "decisions": count(memory.decision_repo),
-        "experiences": count(memory.experience_repo),
+        **memory.repository_stats(),
         "session_turns": len(memory._session_turns),
         "llm_configured": memory.llm is not None,
     }

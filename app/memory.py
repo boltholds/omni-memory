@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import time
-import uuid
 from dataclasses import dataclass
 from typing import Any
 
@@ -10,13 +8,30 @@ from infra.embeddings import build_embedder
 from .orchestrator import Orchestrator
 from .prompting import PromptRenderer
 from .retriever import Retriever
+from app.agent_cycle import AgentCycleRecord
 from app.fact_maintenance import FactMaintenanceCommand, FactMaintenanceResult, FactMaintenanceService
+from app.memory_commands import (
+    MemoryCommandContext,
+    MemoryCommandInterpreter,
+    RecordAgentCycleCommand,
+    RecordExperienceCommand,
+    WriteDecisionCommand,
+    WriteFactCommand,
+    WriteItemsCommand,
+    WriteNoteCommand,
+)
+from app.memory_repositories import (
+    MemoryClearCommand,
+    MemoryClearReport,
+    MemoryRepositories,
+    build_memory_repositories,
+)
 
 from domain.distiller import IMemoryDistiller, SessionTurn
 from domain.models import ContextPack, ConflictReport, DecisionRecord, ExperienceRecord, RetrievalBundle, WriteReport
 from domain.model_ports import IEmbedder, ModelBundle
 from domain.policy import MemoryPolicy
-from domain.writeback import WritebackRequest, WritebackResult, WritebackRawItem
+from domain.writeback import WritebackRequest, WritebackResult
 from app.session_distillation import (
     ConservativeCandidateValidator,
     accepted_candidates,
@@ -27,10 +42,9 @@ from domain.repositories import IFactRepo
 
 from infra.consistency import SimpleConsistencyEngine
 from infra.llm.llm_factory import build_llm
-from infra.repo.episodic_repo import EpisodicRepo
-from infra.repo.graph_repo import GraphRepo
 from infra.repo.vector_repo import VectorStoreRepo
 from infra.repo.decision_repo import DecisionRepo
+from infra.repo.episodic_repo import EpisodicRepo
 from infra.repo.experience_repo import ExperienceRepo
 
 from app.writeback.memory_policies import (
@@ -64,24 +78,9 @@ class MemoryAnswer:
     model: str | None = None
 
 
-@dataclass(frozen=True)
-class MemoryClearReport:
-    vector_objects: int = 0
-    facts: int = 0
-    episodes: int = 0
-    decisions: int = 0
-    experiences: int = 0
-    session_turns: int = 0
-    dry_run: bool = False
-
-
 def build_writeback_service(
     *,
-    vector_repo: VectorStoreRepo,
-    graph_repo: IFactRepo,
-    episodic_repo: EpisodicRepo,
-    decision_repo: DecisionRepo | None = None,
-    experience_repo: ExperienceRepo | None = None,
+    repositories: MemoryRepositories,
     reject_conflicts: bool = False,
 ) -> WriteBackService:
     memory_policy = MemoryPolicy()
@@ -119,11 +118,11 @@ def build_writeback_service(
     ]
 
     repository_router = MemoryRepositoryRouter(
-        vector_repo=vector_repo,
-        graph_repo=graph_repo,
-        episodic_repo=episodic_repo,
-        decision_repo=decision_repo,
-        experience_repo=experience_repo,
+        vector_repo=repositories.vector,
+        graph_repo=repositories.graph,
+        episodic_repo=repositories.episodic,
+        decision_repo=repositories.decision,
+        experience_repo=repositories.experience,
     )
 
     return WriteBackService(
@@ -162,29 +161,37 @@ class OmniMemory:
         if vector_repo is None and selected_embedder is None:
             selected_embedder = build_embedder(settings.embedding_backend, settings.embedding_model)
 
-        self.vector_repo = vector_repo or VectorStoreRepo(embedder=selected_embedder)
-        self.graph_repo = graph_repo or GraphRepo()
-        self.episodic_repo = episodic_repo or EpisodicRepo(db_path=settings.sqlite_path)
-        self.decision_repo = decision_repo or DecisionRepo()
-        self.experience_repo = experience_repo or ExperienceRepo()
+        self.repositories = build_memory_repositories(
+            embedder=selected_embedder,
+            vector_repo=vector_repo,
+            graph_repo=graph_repo,
+            episodic_repo=episodic_repo,
+            decision_repo=decision_repo,
+            experience_repo=experience_repo,
+        )
+
+        self.vector_repo = self.repositories.vector
+        self.graph_repo = self.repositories.graph
+        self.episodic_repo = self.repositories.episodic
+        self.decision_repo = self.repositories.decision
+        self.experience_repo = self.repositories.experience
 
         self.retriever = Retriever(
-            self.vector_repo,
-            self.graph_repo,
-            self.episodic_repo,
-            self.decision_repo,
-            self.experience_repo,
+            self.repositories.vector,
+            self.repositories.graph,
+            self.repositories.episodic,
+            self.repositories.decision,
+            self.repositories.experience,
         )
         self.consistency = SimpleConsistencyEngine()
         self.orchestrator = Orchestrator(self.retriever, self.consistency)
-        self.fact_maintenance = FactMaintenanceService(self.graph_repo)
+        self.fact_maintenance = FactMaintenanceService(self.repositories.graph)
         self.writeback_service = build_writeback_service(
-            vector_repo=self.vector_repo,
-            graph_repo=self.graph_repo,
-            episodic_repo=self.episodic_repo,
-            decision_repo=self.decision_repo,
-            experience_repo=self.experience_repo,
+            repositories=self.repositories,
             reject_conflicts=reject_conflicts,
+        )
+        self.command_interpreter = MemoryCommandInterpreter(
+            MemoryCommandContext(writeback_service=self.writeback_service)
         )
 
         self.distiller = distiller or bundle.distiller
@@ -217,13 +224,14 @@ class OmniMemory:
         dry_run: bool = False,
         meta: dict[str, Any] | None = None,
     ) -> WritebackResult:
-        request = WritebackRequest(
+        return self.command_interpreter.execute(
+            WriteItemsCommand(
+                items=items,
                 source=source,
-                dry_run= dry_run,
-                meta= meta or {},
-                items=[WritebackRawItem.model_validate(item) for item in items],
+                dry_run=dry_run,
+                meta=meta,
+            )
         )
-        return self.writeback_service.write(request)
 
     def write_fact(
         self,
@@ -234,22 +242,15 @@ class OmniMemory:
         source: str = "user",
         confidence: float = 1.0,
     ) -> WriteReport:
-        item = {
-            "id": f"fact-{uuid.uuid4().hex}",
-            "type": "fact",
-            "subject": subject.lower().strip(),
-            "predicate": predicate.lower().strip(),
-            "object": object_.lower().strip(),
-            "provenance": {
-                "source": source,
-                "time": time.time(),
-                "meta": {},
-            },
-            "meta": {
-                "confidence": confidence,
-            },
-        }
-        return self.write_items([item], source=source)
+        return self.command_interpreter.execute(
+            WriteFactCommand(
+                subject=subject,
+                predicate=predicate,
+                object_=object_,
+                source=source,
+                confidence=confidence,
+            )
+        )
 
     def write_note(
         self,
@@ -258,18 +259,9 @@ class OmniMemory:
         source: str = "user",
         meta: dict[str, Any] | None = None,
     ) -> WriteReport:
-        item = {
-            "id": f"note-{uuid.uuid4().hex}",
-            "type": "note",
-            "payload": {"text": text},
-            "provenance": {
-                "source": source,
-                "time": time.time(),
-                "meta": meta or {},
-            },
-            "meta": meta or {},
-        }
-        return self.write_items([item], source=source, meta=meta)
+        return self.command_interpreter.execute(
+            WriteNoteCommand(text=text, source=source, meta=meta)
+        )
 
     def write_decision(
         self,
@@ -284,26 +276,19 @@ class OmniMemory:
         source: str = "user",
         meta: dict[str, Any] | None = None,
     ) -> WriteReport:
-        item = {
-            "id": f"decision-{uuid.uuid4().hex}",
-            "type": "decision",
-            "payload": {
-                "title": title,
-                "status": status,
-                "context": context,
-                "decision": decision,
-                "consequences": consequences or [],
-                "alternatives": alternatives or [],
-                "refs": refs or {},
-            },
-            "provenance": {
-                "source": source,
-                "time": time.time(),
-                "meta": {},
-            },
-            "meta": meta or {},
-        }
-        return self.write_items([item], source=source, meta=meta)
+        return self.command_interpreter.execute(
+            WriteDecisionCommand(
+                title=title,
+                decision=decision,
+                context=context,
+                consequences=consequences,
+                alternatives=alternatives,
+                refs=refs,
+                status=status,
+                source=source,
+                meta=meta,
+            )
+        )
 
     def list_decisions(
         self,
@@ -333,30 +318,23 @@ class OmniMemory:
         source: str = "user",
         meta: dict[str, Any] | None = None,
     ) -> WriteReport:
-        item = {
-            "id": f"experience-{uuid.uuid4().hex}",
-            "type": "experience",
-            "payload": {
-                "goal": goal,
-                "context": context,
-                "decision": decision,
-                "actions": actions or [],
-                "outcome": outcome,
-                "evaluation": evaluation or {},
-                "lesson": lesson,
-                "reuse_when": reuse_when or [],
-                "avoid_when": avoid_when or [],
-                "confidence": confidence,
-                "refs": refs or {},
-            },
-            "provenance": {
-                "source": source,
-                "time": time.time(),
-                "meta": {},
-            },
-            "meta": meta or {},
-        }
-        return self.write_items([item], source=source, meta=meta)
+        return self.command_interpreter.execute(
+            RecordExperienceCommand(
+                goal=goal,
+                lesson=lesson,
+                context=context,
+                decision=decision,
+                actions=actions,
+                outcome=outcome,
+                evaluation=evaluation,
+                reuse_when=reuse_when,
+                avoid_when=avoid_when,
+                confidence=confidence,
+                refs=refs,
+                source=source,
+                meta=meta,
+            )
+        )
 
     def list_experiences(self, *, limit: int | None = None) -> list[ExperienceRecord]:
         return self.experience_repo.list_experiences(limit=limit)
@@ -366,6 +344,16 @@ class OmniMemory:
 
     def search_experiences(self, query: str, *, k: int = 5) -> list[ExperienceRecord]:
         return self.experience_repo.search(query, k=k)
+
+    def record_agent_cycle(
+        self,
+        cycle: AgentCycleRecord | dict[str, Any],
+        *,
+        source: str = "agent-cycle",
+    ) -> WriteReport:
+        return self.command_interpreter.execute(
+            RecordAgentCycleCommand(cycle=cycle, source=source)
+        )
 
     def ingest_turn(self, role: str, content: str) -> None:
         self._session_turns.append(SessionTurn(role=role, content=content))
@@ -384,36 +372,23 @@ class OmniMemory:
         include_session: bool = True,
         dry_run: bool = False,
     ) -> MemoryClearReport:
-        vector_objects = _repo_count(self.vector_repo) if include_vectors else 0
-        facts = _repo_count(self.graph_repo) if include_facts else 0
-        episodes = _repo_count(self.episodic_repo) if include_episodes else 0
-        decisions = _repo_count(self.decision_repo) if include_decisions else 0
-        experiences = _repo_count(self.experience_repo) if include_experiences else 0
-        session_turns = len(self._session_turns) if include_session else 0
-
-        if not dry_run:
-            if include_vectors:
-                _repo_clear(self.vector_repo)
-            if include_facts:
-                _repo_clear(self.graph_repo)
-            if include_episodes:
-                _repo_clear(self.episodic_repo)
-            if include_decisions:
-                _repo_clear(self.decision_repo)
-            if include_experiences:
-                _repo_clear(self.experience_repo)
-            if include_session:
-                self.clear_session()
-
-        return MemoryClearReport(
-            vector_objects=vector_objects,
-            facts=facts,
-            episodes=episodes,
-            decisions=decisions,
-            experiences=experiences,
-            session_turns=session_turns,
+        command = MemoryClearCommand(
+            include_vectors=include_vectors,
+            include_facts=include_facts,
+            include_episodes=include_episodes,
+            include_decisions=include_decisions,
+            include_experiences=include_experiences,
+            include_session=include_session,
             dry_run=dry_run,
         )
+        return command.execute(
+            self.repositories,
+            session_turns=len(self._session_turns),
+            clear_session=self.clear_session,
+        )
+
+    def repository_stats(self) -> dict[str, int | None]:
+        return self.repositories.stats()
 
     def commit_session(
         self,
@@ -540,13 +515,3 @@ class OmniMemory:
             rejected=result.rejected_count + result.error_count,
             reasons=result.reasons,
         )
-
-
-def _repo_count(repo: Any) -> int:
-    return int(repo.count()) if hasattr(repo, "count") else 0
-
-
-def _repo_clear(repo: Any) -> int:
-    if not hasattr(repo, "clear"):
-        return 0
-    return int(repo.clear())

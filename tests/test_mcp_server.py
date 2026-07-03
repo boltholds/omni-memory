@@ -36,6 +36,7 @@ def test_mcp_tool_schemas_include_core_memory_tools():
     assert "omni_memory_get_decision" in names
     assert "omni_memory_write_experience" in names
     assert "omni_memory_search_experiences" in names
+    assert "omni_memory_record_agent_cycle" in names
     assert "omni_memory_stats" in names
 
 
@@ -108,6 +109,44 @@ def test_mcp_clear_removes_selected_memory_stores():
     assert stats["session_turns"] == 0
     assert handlers["omni_memory_retrieve"](query="alice lighthouse project")["facts"] == []
     assert handlers["omni_memory_retrieve"](query="alice lighthouse project")["semantic_chunks"] == []
+
+
+def test_mcp_clear_preserves_excluded_memory_stores():
+    handlers = build_mcp_handlers(_memory())
+
+    handlers["omni_memory_write_fact"](
+        subject="alice",
+        predicate="at",
+        object="lighthouse",
+        source="test",
+    )
+    handlers["omni_memory_write_note"](text="Project uses MCP tools.", source="test")
+    handlers["omni_memory_session_ingest_turn"](role="user", content="transient turn")
+
+    cleared = handlers["omni_memory_clear"](
+        include_facts=False,
+        include_episodes=False,
+        include_decisions=False,
+        include_experiences=False,
+    )
+    assert cleared == {
+        "vector_objects": 1,
+        "facts": 0,
+        "episodes": 0,
+        "decisions": 0,
+        "experiences": 0,
+        "session_turns": 1,
+        "dry_run": False,
+    }
+
+    stats = handlers["omni_memory_stats"]()
+    assert stats["vector_objects"] == 0
+    assert stats["facts"] == 1
+    assert stats["session_turns"] == 0
+
+    retrieved = handlers["omni_memory_retrieve"](query="Where is Alice?")
+    assert any(fact["object"] == "lighthouse" for fact in retrieved["facts"])
+    assert handlers["omni_memory_retrieve"](query="Project uses MCP tools")["semantic_chunks"] == []
 
 
 def test_mcp_fact_maintenance_supersedes_without_creating_current_conflict():
@@ -246,6 +285,37 @@ def test_mcp_experience_records_are_searchable_and_retrieved_in_context():
     assert "building MCP integrations" in sections["Relevant Experience"]
 
 
+def test_mcp_agent_cycle_records_reusable_experience():
+    handlers = build_mcp_handlers(_memory())
+
+    write = handlers["omni_memory_record_agent_cycle"](
+        goal="Make fact maintenance manageable",
+        plan=["Keep repositories as storage primitives", "Move semantic operations into strategies"],
+        decisions=["Use FactMaintenanceService with strategies"],
+        actions=["Added list/get/retract/supersede strategies", "Exposed MCP maintenance tools"],
+        outcome="Fact maintenance works without making GraphRepo responsible for business semantics.",
+        tests=["71 passed"],
+        files=["app/fact_maintenance.py", "infra/repo/graph_repo.py"],
+        side_effects=["MCP server must be restarted for new tools"],
+        lesson="Maintenance behavior belongs in strategies, not storage repositories.",
+        reuse_when=["adding semantic operations over persisted memory"],
+        avoid_when=["operation is a simple storage primitive"],
+        confidence=0.96,
+        source="test",
+    )
+    assert write["saved"] == 1
+
+    found = handlers["omni_memory_search_experiences"](
+        query="semantic operations persisted memory strategies",
+        k=3,
+    )["experiences"]
+    assert found[0]["goal"] == "Make fact maintenance manageable"
+    assert found[0]["decision"] == "Use FactMaintenanceService with strategies"
+    assert found[0]["evaluation"]["tests"] == ["71 passed"]
+    assert found[0]["refs"]["files"] == ["app/fact_maintenance.py", "infra/repo/graph_repo.py"]
+    assert found[0]["meta"]["recorded_from"] == "agent_cycle"
+
+
 @pytest.mark.asyncio
 async def test_mcp_server_lists_and_calls_tools():
     server = build_mcp_app(_memory())
@@ -256,6 +326,7 @@ async def test_mcp_server_lists_and_calls_tools():
     assert any(tool.name == "omni_memory_supersede_fact" for tool in listed)
     assert any(tool.name == "omni_memory_write_decision" for tool in listed)
     assert any(tool.name == "omni_memory_write_experience" for tool in listed)
+    assert any(tool.name == "omni_memory_record_agent_cycle" for tool in listed)
 
     called = await server.call_tool("omni_memory_stats", {})
     body = _tool_text(called)

@@ -310,6 +310,45 @@ def build_mcp_app(memory: OmniMemory) -> FastMCP:
         return call("omni_memory_search_experiences", query=query, k=k)
 
     @server.tool(
+        name="omni_memory_record_agent_cycle",
+        description="Record a completed agent cycle as reusable experience.",
+        structured_output=False,
+    )
+    def record_agent_cycle(
+        goal: str,
+        lesson: str,
+        plan: list[str] | None = None,
+        decisions: list[str] | None = None,
+        actions: list[str] | None = None,
+        outcome: str = "",
+        tests: list[str] | None = None,
+        files: list[str] | None = None,
+        side_effects: list[str] | None = None,
+        reuse_when: list[str] | None = None,
+        avoid_when: list[str] | None = None,
+        confidence: float = 0.8,
+        source: str = "mcp-agent-cycle",
+        meta: dict[str, Any] | None = None,
+    ) -> str:
+        return call(
+            "omni_memory_record_agent_cycle",
+            goal=goal,
+            lesson=lesson,
+            plan=plan or [],
+            decisions=decisions or [],
+            actions=actions or [],
+            outcome=outcome,
+            tests=tests or [],
+            files=files or [],
+            side_effects=side_effects or [],
+            reuse_when=reuse_when or [],
+            avoid_when=avoid_when or [],
+            confidence=confidence,
+            source=source,
+            meta=meta or {},
+        )
+
+    @server.tool(
         name="omni_memory_session_ingest_turn",
         description="Append a turn to the in-process session buffer before session distillation.",
         structured_output=False,
