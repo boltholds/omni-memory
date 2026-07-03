@@ -1,6 +1,6 @@
 
 from typing import Any, Protocol
-from domain.models import (MemoryObject, Fact, Episode)
+from domain.models import (MemoryObject, Fact, Episode, DecisionRecord)
 from domain.writeback import (WritebackRawItem, WritebackConversionPolicy, get_item_id, normalize_provenance, clean_meta, DomainMemoryObject)
 from domain.models import Provenance, Fact, Episode, MemoryObject, EpisodeEvent
 from domain.policy import MemoryPolicy
@@ -107,6 +107,30 @@ class EpisodeWritebackPolicy:
             )
     
         
+class DecisionWritebackPolicy:
+    name = "decision_writeback"
+    kind = "decision"
+
+    def matches(self, item: WritebackRawItem) -> bool:
+        return item.type in {"decision", "adr"}
+
+    def convert(self, item: WritebackRawItem) -> DecisionRecord:
+        payload = item.payload or {}
+
+        return DecisionRecord(
+            id=get_item_id(item, prefix="decision"),
+            title=item.summary or str(payload.get("title") or payload.get("summary") or ""),
+            status=str(payload.get("status") or item.meta.get("status") or "accepted"),
+            context=str(payload.get("context") or item.content or ""),
+            decision=str(payload.get("decision") or item.text or ""),
+            consequences=list(payload.get("consequences") or []),
+            alternatives=list(payload.get("alternatives") or []),
+            refs=dict(payload.get("refs") or {}),
+            provenance=normalize_provenance(item),
+            meta=clean_meta(item),
+        )
+
+
 class NoteWritebackPolicy:
     name = "note_writeback"
     kind = "note"

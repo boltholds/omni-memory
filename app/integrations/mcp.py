@@ -175,6 +175,45 @@ MCP_TOOL_SCHEMAS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "omni_memory_write_decision",
+        "description": "Save a project decision/ADR record.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "decision": {"type": "string"},
+                "context": {"type": "string", "default": ""},
+                "consequences": {"type": "array", "items": {"type": "string"}, "default": []},
+                "alternatives": {"type": "array", "items": {"type": "string"}, "default": []},
+                "refs": {"type": "object", "default": {}},
+                "status": {"type": "string", "default": "accepted"},
+                "source": {"type": "string", "default": "mcp"},
+                "meta": {"type": "object", "default": {}},
+            },
+            "required": ["title", "decision"],
+        },
+    },
+    {
+        "name": "omni_memory_list_decisions",
+        "description": "List project decision/ADR records.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "status": {"type": "string"},
+                "limit": {"type": "integer"},
+            },
+        },
+    },
+    {
+        "name": "omni_memory_get_decision",
+        "description": "Get a project decision/ADR record by id.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"decision_id": {"type": "string"}},
+            "required": ["decision_id"],
+        },
+    },
+    {
         "name": "omni_memory_session_ingest_turn",
         "description": "Append a turn to the in-process session buffer before session distillation.",
         "inputSchema": {
@@ -217,6 +256,7 @@ MCP_TOOL_SCHEMAS: list[dict[str, Any]] = [
                 "include_vectors": {"type": "boolean", "default": True},
                 "include_facts": {"type": "boolean", "default": True},
                 "include_episodes": {"type": "boolean", "default": True},
+                "include_decisions": {"type": "boolean", "default": True},
                 "include_session": {"type": "boolean", "default": True},
                 "dry_run": {"type": "boolean", "default": False},
             },
@@ -321,6 +361,33 @@ def build_mcp_handlers(memory: OmniMemory) -> dict[str, Callable[..., Any]]:
             source=kwargs.get("source", "mcp"),
             meta=kwargs.get("meta") or {},
         ).model_dump(),
+        "omni_memory_write_decision": lambda **kwargs: memory.write_decision(
+            title=kwargs["title"],
+            decision=kwargs["decision"],
+            context=kwargs.get("context", ""),
+            consequences=kwargs.get("consequences") or [],
+            alternatives=kwargs.get("alternatives") or [],
+            refs=kwargs.get("refs") or {},
+            status=kwargs.get("status", "accepted"),
+            source=kwargs.get("source", "mcp"),
+            meta=kwargs.get("meta") or {},
+        ).model_dump(),
+        "omni_memory_list_decisions": lambda **kwargs: {
+            "decisions": [
+                decision.model_dump(mode="json")
+                for decision in memory.list_decisions(
+                    status=kwargs.get("status"),
+                    limit=kwargs.get("limit"),
+                )
+            ]
+        },
+        "omni_memory_get_decision": lambda **kwargs: {
+            "decision": (
+                decision.model_dump(mode="json")
+                if (decision := memory.get_decision(kwargs["decision_id"])) is not None
+                else None
+            )
+        },
         "omni_memory_session_ingest_turn": lambda **kwargs: _session_ingest_turn(
             memory,
             role=kwargs["role"],
@@ -338,6 +405,7 @@ def build_mcp_handlers(memory: OmniMemory) -> dict[str, Callable[..., Any]]:
             include_vectors=kwargs.get("include_vectors", True),
             include_facts=kwargs.get("include_facts", True),
             include_episodes=kwargs.get("include_episodes", True),
+            include_decisions=kwargs.get("include_decisions", True),
             include_session=kwargs.get("include_session", True),
             dry_run=kwargs.get("dry_run", False),
         ).__dict__,
@@ -363,6 +431,7 @@ def _stats(memory: OmniMemory) -> dict[str, Any]:
         "vector_objects": count(memory.vector_repo),
         "facts": count(memory.graph_repo),
         "episodes": count(memory.episodic_repo),
+        "decisions": count(memory.decision_repo),
         "session_turns": len(memory._session_turns),
         "llm_configured": memory.llm is not None,
     }

@@ -31,6 +31,9 @@ def test_mcp_tool_schemas_include_core_memory_tools():
     assert "omni_memory_get_fact" in names
     assert "omni_memory_retract_fact" in names
     assert "omni_memory_supersede_fact" in names
+    assert "omni_memory_write_decision" in names
+    assert "omni_memory_list_decisions" in names
+    assert "omni_memory_get_decision" in names
     assert "omni_memory_stats" in names
 
 
@@ -77,6 +80,7 @@ def test_mcp_clear_removes_selected_memory_stores():
         "vector_objects": 1,
         "facts": 1,
         "episodes": 0,
+        "decisions": 0,
         "session_turns": 1,
         "dry_run": True,
     }
@@ -87,6 +91,7 @@ def test_mcp_clear_removes_selected_memory_stores():
         "vector_objects": 1,
         "facts": 1,
         "episodes": 0,
+        "decisions": 0,
         "session_turns": 1,
         "dry_run": False,
     }
@@ -94,6 +99,7 @@ def test_mcp_clear_removes_selected_memory_stores():
     stats = handlers["omni_memory_stats"]()
     assert stats["vector_objects"] == 0
     assert stats["facts"] == 0
+    assert stats["decisions"] == 0
     assert stats["session_turns"] == 0
     assert handlers["omni_memory_retrieve"](query="alice lighthouse project")["facts"] == []
     assert handlers["omni_memory_retrieve"](query="alice lighthouse project")["semantic_chunks"] == []
@@ -176,6 +182,33 @@ def test_mcp_fact_maintenance_retracts_fact_from_current_beliefs():
     assert retrieved["beliefs"] == []
 
 
+def test_mcp_decision_records_are_written_listed_and_retrieved_in_context():
+    handlers = build_mcp_handlers(_memory())
+
+    write = handlers["omni_memory_write_decision"](
+        title="Use FastMCP for MCP server",
+        decision="Use official MCP SDK FastMCP instead of a handwritten JSON-RPC loop.",
+        context="MCP clients expect protocol-compatible stdio behavior.",
+        consequences=["Better compatibility with Codex and other MCP clients."],
+        alternatives=["Keep minimal newline-delimited JSON-RPC server."],
+        refs={"files": ["app/mcp_server.py"]},
+        source="test",
+    )
+    assert write["saved"] == 1
+
+    listed = handlers["omni_memory_list_decisions"](limit=5)["decisions"]
+    assert listed[0]["title"] == "Use FastMCP for MCP server"
+
+    decision_id = listed[0]["id"]
+    got = handlers["omni_memory_get_decision"](decision_id=decision_id)["decision"]
+    assert got["decision"].startswith("Use official MCP SDK")
+
+    context = handlers["omni_memory_context"](query="Why did we choose FastMCP?")
+    sections = {section["title"]: section["body"] for section in context["sections"]}
+    assert "Decision Records" in sections
+    assert "Use FastMCP for MCP server" in sections["Decision Records"]
+
+
 @pytest.mark.asyncio
 async def test_mcp_server_lists_and_calls_tools():
     server = build_mcp_app(_memory())
@@ -184,6 +217,7 @@ async def test_mcp_server_lists_and_calls_tools():
     assert any(tool.name == "omni_memory_stats" for tool in listed)
     assert any(tool.name == "omni_memory_clear" for tool in listed)
     assert any(tool.name == "omni_memory_supersede_fact" for tool in listed)
+    assert any(tool.name == "omni_memory_write_decision" for tool in listed)
 
     called = await server.call_tool("omni_memory_stats", {})
     body = _tool_text(called)

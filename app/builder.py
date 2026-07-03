@@ -6,6 +6,7 @@ from domain.repositories import IFactRepo, IVectorRepo
 from app.memory import OmniMemory
 
 from infra.repo.episodic_repo import EpisodicRepo
+from infra.repo.decision_repo import DecisionRepo
 
 
 def build_memory(
@@ -18,6 +19,7 @@ def build_memory(
     vector_repo: IVectorRepo | None = None,
     graph_repo: IFactRepo | None = None,
     episodic_repo: EpisodicRepo | None = None,
+    decision_repo: DecisionRepo | None = None,
 ) -> OmniMemory:
     """Build the central OmniMemory facade used by CLI, FastAPI and examples.
 
@@ -42,7 +44,7 @@ def build_memory(
         vector_repo=vector_repo,
         graph_repo=graph_repo,
         episodic_repo=episodic_repo,
+        decision_repo=decision_repo,
     )
     
     
-

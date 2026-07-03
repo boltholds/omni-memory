@@ -165,6 +165,7 @@ def _local_memory(
     from infra.repo.persistent_vector_repo import PersistentVectorRepo
     from infra.repo.graph_repo import GraphRepo
     from infra.repo.persistent_fact_repo import PersistentFactRepo
+    from infra.repo.decision_repo import DecisionRepo, PersistentDecisionRepo
 
     memory_dir = Path(".omni-memory")
     memory_dir.mkdir(parents=True, exist_ok=True)
@@ -192,6 +193,11 @@ def _local_memory(
         path=memory_dir / "facts.json",
     )
 
+    decision_repo = PersistentDecisionRepo(
+        inner=DecisionRepo(),
+        path=memory_dir / "decisions.json",
+    )
+
     vector_dir = (
         memory_dir
         / "vector"
@@ -211,6 +217,7 @@ def _local_memory(
         reject_conflicts=reject_conflicts,
         vector_repo=vector_repo,
         graph_repo=graph_repo,
+        decision_repo=decision_repo,
     )
 
 

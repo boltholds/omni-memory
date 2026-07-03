@@ -1,6 +1,6 @@
 from typing import Any, Optional, Protocol, runtime_checkable
 
-from domain.models import Fact, Episode, MemoryObject
+from domain.models import Fact, Episode, MemoryObject, DecisionRecord
 from domain.operations import MemoryOperation, PolicyDecision
 
 from domain.writeback import (
@@ -21,6 +21,7 @@ from app.writeback.writeback_policies import (
     FactWritebackPolicy,
     EpisodeWritebackPolicy,
     PreferenceWritebackPolicy,
+    DecisionWritebackPolicy,
     NoteWritebackPolicy,
     WritebackPolicyResolver,
 )
@@ -58,6 +59,12 @@ class EpisodicMemoryRepository(Protocol):
         ...
 
 
+@runtime_checkable
+class DecisionMemoryRepository(Protocol):
+    def save_decision(self, decision: DecisionRecord) -> None:
+        ...
+
+
 class MemoryRepositoryRouter:
     """
     Роутер сохранения доменных memory objects.
@@ -72,10 +79,12 @@ class MemoryRepositoryRouter:
         vector_repo: VectorMemoryRepository,
         graph_repo: GraphMemoryRepository,
         episodic_repo: EpisodicMemoryRepository,
+        decision_repo: DecisionMemoryRepository | None = None,
     ) -> None:
         self.vector_repo = vector_repo
         self.graph_repo = graph_repo
         self.episodic_repo = episodic_repo
+        self.decision_repo = decision_repo
 
     def save(self, memory_object: DomainMemoryObject) -> None:
         if isinstance(memory_object, Fact):
@@ -84,6 +93,12 @@ class MemoryRepositoryRouter:
 
         if isinstance(memory_object, Episode):
             self.episodic_repo.save_episode(memory_object)
+            return
+
+        if isinstance(memory_object, DecisionRecord):
+            if self.decision_repo is None:
+                raise TypeError("Decision repository is not configured")
+            self.decision_repo.save_decision(memory_object)
             return
 
         if isinstance(memory_object, MemoryObject):
@@ -193,6 +208,7 @@ class WriteBackService:
                     FactWritebackPolicy(),
                     EpisodeWritebackPolicy(),
                     PreferenceWritebackPolicy(),
+                    DecisionWritebackPolicy(),
                     NoteWritebackPolicy(),  # always in the end, because she is fallback
                 ]
             )
@@ -216,6 +232,7 @@ class WriteBackService:
             vector_repo=self._repository_router.vector_repo,
             graph_repo=self._repository_router.graph_repo,
             episodic_repo=self._repository_router.episodic_repo,
+            decision_repo=self._repository_router.decision_repo,
         )
 
         for item in request.items:

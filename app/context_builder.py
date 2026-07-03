@@ -131,6 +131,21 @@ class EpisodesStrategy(BudgetedSectionStrategy):
         return [e.summary.strip() or "(no summary)" for e in bundle.episodes]
 
 
+class DecisionsStrategy(BudgetedSectionStrategy):
+    title = "Decision Records"
+
+    def handle(self, state: ContextBuildState) -> ContextBuildState:
+        if state.budget <= 0:
+            return state
+        return super().handle(state)
+
+    def lines(self, bundle: RetrievalBundle) -> List[str]:
+        return [
+            f"{decision.title}: {decision.decision} (status={decision.status}, id={decision.id})"
+            for decision in bundle.decisions
+        ]
+
+
 class SemanticNotesStrategy(BudgetedSectionStrategy):
     title = "Semantic Notes"
 
@@ -163,6 +178,7 @@ def _context_strategy_chain() -> List[ContextBuildStrategy]:
         CurrentBeliefsStrategy(),
         FactsStrategy(),
         EpisodesStrategy(),
+        DecisionsStrategy(),
         SemanticNotesStrategy(),
         EmptyContextAdvisoryStrategy(),
     ]

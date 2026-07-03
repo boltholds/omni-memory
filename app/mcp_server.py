@@ -204,6 +204,51 @@ def build_mcp_app(memory: OmniMemory) -> FastMCP:
         return call("omni_memory_write_note", text=text, source=source, meta=meta or {})
 
     @server.tool(
+        name="omni_memory_write_decision",
+        description="Save a project decision/ADR record.",
+        structured_output=False,
+    )
+    def write_decision(
+        title: str,
+        decision: str,
+        context: str = "",
+        consequences: list[str] | None = None,
+        alternatives: list[str] | None = None,
+        refs: dict[str, Any] | None = None,
+        status: str = "accepted",
+        source: str = "mcp",
+        meta: dict[str, Any] | None = None,
+    ) -> str:
+        return call(
+            "omni_memory_write_decision",
+            title=title,
+            decision=decision,
+            context=context,
+            consequences=consequences or [],
+            alternatives=alternatives or [],
+            refs=refs or {},
+            status=status,
+            source=source,
+            meta=meta or {},
+        )
+
+    @server.tool(
+        name="omni_memory_list_decisions",
+        description="List project decision/ADR records.",
+        structured_output=False,
+    )
+    def list_decisions(status: str | None = None, limit: int | None = None) -> str:
+        return call("omni_memory_list_decisions", status=status, limit=limit)
+
+    @server.tool(
+        name="omni_memory_get_decision",
+        description="Get a project decision/ADR record by id.",
+        structured_output=False,
+    )
+    def get_decision(decision_id: str) -> str:
+        return call("omni_memory_get_decision", decision_id=decision_id)
+
+    @server.tool(
         name="omni_memory_session_ingest_turn",
         description="Append a turn to the in-process session buffer before session distillation.",
         structured_output=False,
@@ -249,6 +294,7 @@ def build_mcp_app(memory: OmniMemory) -> FastMCP:
         include_vectors: bool = True,
         include_facts: bool = True,
         include_episodes: bool = True,
+        include_decisions: bool = True,
         include_session: bool = True,
         dry_run: bool = False,
     ) -> str:
@@ -257,6 +303,7 @@ def build_mcp_app(memory: OmniMemory) -> FastMCP:
             include_vectors=include_vectors,
             include_facts=include_facts,
             include_episodes=include_episodes,
+            include_decisions=include_decisions,
             include_session=include_session,
             dry_run=dry_run,
         )

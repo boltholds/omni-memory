@@ -52,11 +52,25 @@ class EpisodeEvent(BaseModel):
     refs: Dict[str, Any] = Field(default_factory=dict)
 
 
+class DecisionRecord(BaseModel):
+    id: str
+    title: str
+    status: str = "accepted"
+    context: str = ""
+    decision: str = ""
+    consequences: List[str] = Field(default_factory=list)
+    alternatives: List[str] = Field(default_factory=list)
+    refs: Dict[str, Any] = Field(default_factory=dict)
+    provenance: Provenance = Field(default_factory=Provenance)
+    meta: Dict[str, Any] = Field(default_factory=dict)
+
+
 class RetrievalBundle(BaseModel):
     semantic_chunks: List[MemoryObject] = Field(default_factory=list)
     facts: List[Fact] = Field(default_factory=list)
     beliefs: List[FactBelief] = Field(default_factory=list)
     episodes: List[Episode] = Field(default_factory=list)
+    decisions: List[DecisionRecord] = Field(default_factory=list)
     citations: List[Dict[str, Any]] = Field(default_factory=list)
 
 class ConflictItem(BaseModel):

@@ -1,7 +1,7 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import List
-from .models import MemoryObject, Fact, Episode, RetrievalBundle, ConflictReport, ContextPack
+from .models import MemoryObject, Fact, Episode, DecisionRecord, RetrievalBundle, ConflictReport, ContextPack
 
 class IMemoryReadRepository(ABC):
     @abstractmethod
@@ -22,6 +22,16 @@ class IEpisodicRepository(ABC):
     def save_episode(self, episode: Episode) -> None: ...
     @abstractmethod
     def search(self, user: str | None, entities: list[str], k: int = 5) -> List[Episode]: ...
+
+class IDecisionRepository(ABC):
+    @abstractmethod
+    def save_decision(self, decision: DecisionRecord) -> None: ...
+    @abstractmethod
+    def get_decision(self, decision_id: str) -> DecisionRecord | None: ...
+    @abstractmethod
+    def list_decisions(self, status: str | None = None, limit: int | None = None) -> List[DecisionRecord]: ...
+    @abstractmethod
+    def search(self, text: str, k: int = 5) -> List[DecisionRecord]: ...
 
 class IConsistencyEngine(ABC):
     @abstractmethod
