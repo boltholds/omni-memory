@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import Any, List, Set
 
 from app.config import settings
@@ -12,6 +13,31 @@ from domain.models import FailurePatternRecord as PatternRecord
 from domain.ports import IDecisionRepository, IEpisodicRepository, IExperienceRepository, IGraphRepository, IMemoryReadRepository, IRetriever, ISkillRepository
 from domain.ports import IFailurePatternRepository as PatternRepository
 from infra.consistency import build_fact_beliefs
+
+
+@dataclass(frozen=True)
+class RetrievalScopeFilter:
+    domain_ids: list[str] = field(default_factory=list)
+    environments: list[str] = field(default_factory=list)
+    durabilities: list[str] = field(default_factory=list)
+    memory_types: list[str] = field(default_factory=list)
+    include_ephemeral: bool = True
+    strict_domains: bool = False
+    expand_domains: bool = True
+
+    @classmethod
+    def from_raw(cls, raw: dict[str, Any] | None) -> "RetrievalScopeFilter":
+        if raw is None:
+            return cls()
+        return cls(
+            domain_ids=_string_list(raw.get("domain_ids") or raw.get("domains")),
+            environments=[_normalize_token(item) for item in _string_list(raw.get("environments") or raw.get("environment"))],
+            durabilities=[_normalize_token(item) for item in _string_list(raw.get("durabilities") or raw.get("durability"))],
+            memory_types=[_normalize_memory_type(item) for item in _string_list(raw.get("memory_types") or raw.get("types") or raw.get("type"))],
+            include_ephemeral=bool(raw.get("include_ephemeral", True)),
+            strict_domains=bool(raw.get("strict_domains", False)),
+            expand_domains=bool(raw.get("expand_domains", True)),
+        )
 
 
 def _simple_entities(query: str) -> List[str]:
@@ -123,54 +149,96 @@ class Retriever(IRetriever):
         return facts
 
     @timed("retriever.retrieve", slow_ms=100)
-    def retrieve(self, query: str, k_sem: int = 5, k_eps: int = 3, intent: str | None = None, mode: str | None = None) -> RetrievalBundle:
+    def retrieve(
+        self,
+        query: str,
+        k_sem: int = 5,
+        k_eps: int = 3,
+        intent: str | None = None,
+        mode: str | None = None,
+        scope: dict[str, Any] | None = None,
+    ) -> RetrievalBundle:
         profile = self._planner.profile(intent, mode=mode)
         raw_ents = self._extractor.extract(query)
         linked_ents = self._linker.link_all(raw_ents)
         ents = _compound_entities(linked_ents)
-        domain_weights = _domain_weights(query, self._domain_graph)
+        scope_filter = RetrievalScopeFilter.from_raw(scope)
+        domain_weights = _domain_weights(query, self._domain_graph, scope_filter)
 
         semantic_chunks: list[MemoryObject] = []
-        if profile.semantic:
+        if profile.semantic and _memory_type_allowed("note", scope_filter):
             stop_vec = stats.timeit("retriever.vec_ms")
             semantic_chunks = self._rank_memory_items(
                 self._vector.semantic_search(query, k=max(k_sem * 3, k_sem)),
                 domain_weights,
+                scope_filter,
+                memory_type="note",
                 limit=k_sem,
             )
             stop_vec()
 
         facts: List[Fact] = []
-        if profile.facts:
+        if profile.facts and _memory_type_allowed("fact", scope_filter):
             stop_kg = stats.timeit("retriever.kg_ms")
-            facts = self._rank_memory_items(self._expand_graph_two_hop(ents), domain_weights)
+            facts = self._rank_memory_items(
+                self._expand_graph_two_hop(ents),
+                domain_weights,
+                scope_filter,
+                memory_type="fact",
+            )
             stop_kg()
 
         episodes: List[Episode] = []
-        if profile.episodes:
+        if profile.episodes and _memory_type_allowed("episode", scope_filter):
             stop_ep = stats.timeit("retriever.ep_ms")
             episodes = self._rank_memory_items(
                 self._episodic.search(user=None, entities=ents, k=max(k_eps * 3, k_eps)),
                 domain_weights,
+                scope_filter,
+                memory_type="episode",
                 limit=k_eps,
             )
             stop_ep()
 
         decisions: List[DecisionRecord] = []
-        if profile.decisions and self._decisions is not None:
-            decisions = self._rank_memory_items(self._decisions.search(query, k=max(k_eps * 3, k_eps)), domain_weights, limit=k_eps)
+        if profile.decisions and self._decisions is not None and _memory_type_allowed("decision", scope_filter):
+            decisions = self._rank_memory_items(
+                self._decisions.search(query, k=max(k_eps * 3, k_eps)),
+                domain_weights,
+                scope_filter,
+                memory_type="decision",
+                limit=k_eps,
+            )
 
         experiences: List[ExperienceRecord] = []
-        if profile.experiences and self._experiences is not None:
-            experiences = self._rank_memory_items(self._experiences.search(query, k=max(k_eps * 3, k_eps)), domain_weights, limit=k_eps)
+        if profile.experiences and self._experiences is not None and _memory_type_allowed("experience", scope_filter):
+            experiences = self._rank_memory_items(
+                self._experiences.search(query, k=max(k_eps * 3, k_eps)),
+                domain_weights,
+                scope_filter,
+                memory_type="experience",
+                limit=k_eps,
+            )
 
         skills: List[SkillRecord] = []
-        if profile.skills and self._skills is not None:
-            skills = self._rank_memory_items(self._skills.search(query, k=max(k_eps * 3, k_eps)), domain_weights, limit=k_eps)
+        if profile.skills and self._skills is not None and _memory_type_allowed("skill", scope_filter):
+            skills = self._rank_memory_items(
+                self._skills.search(query, k=max(k_eps * 3, k_eps)),
+                domain_weights,
+                scope_filter,
+                memory_type="skill",
+                limit=k_eps,
+            )
 
         patterns: List[PatternRecord] = []
-        if profile.failure_patterns and self._patterns is not None:
-            patterns = self._rank_memory_items(self._patterns.search(query, k=max(k_eps * 3, k_eps)), domain_weights, limit=k_eps)
+        if profile.failure_patterns and self._patterns is not None and _memory_type_allowed("failure_pattern", scope_filter):
+            patterns = self._rank_memory_items(
+                self._patterns.search(query, k=max(k_eps * 3, k_eps)),
+                domain_weights,
+                scope_filter,
+                memory_type="failure_pattern",
+                limit=k_eps,
+            )
 
         beliefs = build_fact_beliefs(facts) if profile.beliefs else []
         return RetrievalBundle(
@@ -185,26 +253,44 @@ class Retriever(IRetriever):
             citations=[],
         )
 
-    def _rank_memory_items(self, items: list[Any], domain_weights: dict[str, float], *, limit: int | None = None) -> list[Any]:
+    def _rank_memory_items(
+        self,
+        items: list[Any],
+        domain_weights: dict[str, float],
+        scope_filter: RetrievalScopeFilter,
+        *,
+        memory_type: str,
+        limit: int | None = None,
+    ) -> list[Any]:
+        filtered = [
+            item
+            for item in items
+            if _passes_scope_filter(item, memory_type=memory_type, scope_filter=scope_filter)
+        ]
         ranked = sorted(
-            items,
+            filtered,
             key=lambda item: (_memory_score(item, domain_weights), _memory_time(item)),
             reverse=True,
         )
         return ranked[:limit] if limit is not None else ranked
 
 
-def _domain_weights(query: str, domain_graph: Any | None) -> dict[str, float]:
+def _domain_weights(query: str, domain_graph: Any | None, scope_filter: RetrievalScopeFilter) -> dict[str, float]:
+    weights: dict[str, float] = {domain_id: 4.0 for domain_id in scope_filter.domain_ids}
     if domain_graph is None or not hasattr(domain_graph, "list_nodes"):
-        return {}
+        return weights
+
+    if scope_filter.expand_domains and hasattr(domain_graph, "reachable_domain_ids"):
+        for source_id in list(weights):
+            for distance, related_id in enumerate(domain_graph.reachable_domain_ids(source_id, max_depth=2), start=1):
+                weights[related_id] = max(weights.get(related_id, 0.0), max(1.0, 2.0 - 0.5 * distance))
 
     normalized_query = _normalize_text(query)
-    weights: dict[str, float] = {}
     for node in domain_graph.list_nodes():
         labels = [node.id, node.name, *getattr(node, "aliases", [])]
         if any(_domain_label_matches(normalized_query, label) for label in labels):
             weights[node.id] = max(weights.get(node.id, 0.0), 3.0)
-            if hasattr(domain_graph, "reachable_domain_ids"):
+            if scope_filter.expand_domains and hasattr(domain_graph, "reachable_domain_ids"):
                 for distance, related_id in enumerate(domain_graph.reachable_domain_ids(node.id, max_depth=2), start=1):
                     weights[related_id] = max(weights.get(related_id, 0.0), max(1.0, 2.0 - 0.5 * distance))
     return weights
@@ -243,6 +329,33 @@ def _memory_score(item: Any, domain_weights: dict[str, float]) -> float:
     return score
 
 
+def _passes_scope_filter(item: Any, *, memory_type: str, scope_filter: RetrievalScopeFilter) -> bool:
+    if not _memory_type_allowed(memory_type, scope_filter):
+        return False
+
+    scope = _scope(item)
+    environment = _normalize_token(scope.get("environment") or "")
+    durability = _normalize_token(scope.get("durability") or "")
+
+    if scope_filter.environments and environment not in scope_filter.environments:
+        return False
+    if scope_filter.durabilities and durability not in scope_filter.durabilities:
+        return False
+    if not scope_filter.include_ephemeral and durability in {"ephemeral", "session"}:
+        return False
+    if scope_filter.strict_domains and scope_filter.domain_ids:
+        item_domains = set(_scope_domain_ids(scope))
+        if not item_domains.intersection(scope_filter.domain_ids):
+            return False
+    return True
+
+
+def _memory_type_allowed(memory_type: str, scope_filter: RetrievalScopeFilter) -> bool:
+    if not scope_filter.memory_types:
+        return True
+    return _normalize_memory_type(memory_type) in scope_filter.memory_types
+
+
 def _memory_time(item: Any) -> float:
     provenance = getattr(item, "provenance", None)
     if provenance is None:
@@ -270,6 +383,47 @@ def _scope_domain_ids(scope: dict[str, Any]) -> list[str]:
     if isinstance(raw, str):
         return [raw]
     return [str(item) for item in raw if str(item)]
+
+
+def _string_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        values = [value]
+    else:
+        values = list(value or [])
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in values:
+        normalized = str(item).strip()
+        key = normalized.casefold()
+        if normalized and key not in seen:
+            seen.add(key)
+            out.append(normalized)
+    return out
+
+
+def _normalize_token(value: Any) -> str:
+    return str(value or "").strip().casefold().replace("-", "_")
+
+
+def _normalize_memory_type(value: Any) -> str:
+    token = _normalize_token(value)
+    aliases = {
+        "notes": "note",
+        "semantic": "note",
+        "semantic_chunk": "note",
+        "semantic_chunks": "note",
+        "facts": "fact",
+        "episodes": "episode",
+        "decisions": "decision",
+        "experiences": "experience",
+        "skills": "skill",
+        "failure_patterns": "failure_pattern",
+        "failure-pattern": "failure_pattern",
+        "failurepattern": "failure_pattern",
+    }
+    return aliases.get(token, token)
 
 
 def _normalize_text(value: str) -> str:
