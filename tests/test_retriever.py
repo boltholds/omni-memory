@@ -4,6 +4,7 @@ from infra.repo.vector_repo import VectorStoreRepo
 from infra.repo.graph_repo import GraphRepo
 from infra.repo.episodic_repo import EpisodicRepo
 from app.retriever import Retriever
+from app.context_builder import build_context
 
 
 def _obj(i: str, text: str) -> MemoryObject:
@@ -46,9 +47,14 @@ def test_retrieve_bundle_contains_items_from_all_sources():
 
     # facts (must include Alice::lighthouse)
     assert any(f.id == "f1" for f in bundle.facts)
+    assert any(b.key == "alice::at" and b.current and b.current.id == "f1" for b in bundle.beliefs)
 
     # episodes (should prefer one with lighthouse)
     assert any(e.id == "e1" for e in bundle.episodes)
+
+    pack, _ = build_context(bundle, max_tokens=8000)
+    assert pack.sections[0].title == "Current Beliefs"
+    assert "CURRENT alice at lighthouse" in pack.sections[0].body
 
 
 def test_retrieve_handles_empty_sources_gracefully():

@@ -1,9 +1,13 @@
 # app/context_builder.py
 from __future__ import annotations
-from typing import List, Tuple
+from dataclasses import dataclass, field
+from typing import List, Protocol, Tuple
+
 from app.config import settings
+from app.memory_planner import MemoryPlanner
 from app.tokenizer import build_tokenizer
 from domain.models import ContextSection,ContextPack,RetrievalBundle
+from domain.ports import IConsistencyEngine
 
 _tok = build_tokenizer(settings.tokenizer_backend, settings.tokenizer_model)
 
@@ -38,62 +42,227 @@ def _take_lines_up_to_budget(lines: List[str], budget: int) -> Tuple[List[str], 
 def _section(title: str, items: List[str]) -> ContextSection:
     return ContextSection(title=title, body="\n".join(f"- {x}" for x in items))
 
-def build_context(bundle: RetrievalBundle, max_tokens: int) -> Tuple[ContextPack, List[str]]:
+
+@dataclass
+class ContextBuildState:
+    bundle: RetrievalBundle
+    budget: int
+    consistency: IConsistencyEngine | None = None
+    intent: str | None = None
+    sections: List[ContextSection] = field(default_factory=list)
+    advisories: List[str] = field(default_factory=list)
+
+
+class ContextBuildStrategy(Protocol):
+    key: str
+
+    def handle(self, state: ContextBuildState) -> ContextBuildState:
+        ...
+
+
+class BudgetedSectionStrategy:
+    title: str
+
+    def lines(self, bundle: RetrievalBundle) -> List[str]:
+        raise NotImplementedError
+
+    def handle(self, state: ContextBuildState) -> ContextBuildState:
+        lines = self.lines(state.bundle)
+        if not lines:
+            return state
+
+        take, trimmed = _take_lines_up_to_budget(lines, state.budget)
+        state.sections.append(_section(self.title, take))
+        used = _tok_count("\n".join(take))
+        state.budget = max(0, state.budget - used)
+
+        if trimmed:
+            state.advisories.append(f"{self.title} trimmed to fit context budget.")
+
+        return state
+
+
+class ConflictsStrategy(BudgetedSectionStrategy):
+    key = "conflicts"
+    title = "Conflicts"
+
+    def lines(self, bundle: RetrievalBundle) -> List[str]:
+        raise RuntimeError("ConflictsStrategy requires ContextBuildState.consistency")
+
+    def handle(self, state: ContextBuildState) -> ContextBuildState:
+        if state.consistency is None:
+            return state
+
+        report = state.consistency.detect_conflicts(state.bundle.facts)
+        if not report.conflicts:
+            return state
+
+        lines = [f"{c.key}: {', '.join(c.variants)}" for c in report.conflicts]
+        take, trimmed = _take_lines_up_to_budget(lines, state.budget)
+        state.sections.append(_section(self.title, take))
+        used = _tok_count("\n".join(take))
+        state.budget = max(0, state.budget - used)
+
+        if trimmed:
+            state.advisories.append("Conflicts trimmed to fit context budget.")
+
+        state.advisories.append(f"Detected {len(report.conflicts)} conflict(s).")
+        return state
+
+
+class CurrentBeliefsStrategy(BudgetedSectionStrategy):
+    key = "current_beliefs"
+    title = "Current Beliefs"
+
+    def lines(self, bundle: RetrievalBundle) -> List[str]:
+        return [_format_belief_line(belief) for belief in bundle.beliefs]
+
+
+class FactsStrategy(BudgetedSectionStrategy):
+    key = "facts"
+    title = "Facts"
+
+    def lines(self, bundle: RetrievalBundle) -> List[str]:
+        return [f"{f.subject} {f.predicate} {f.object}" for f in bundle.facts]
+
+
+class EpisodesStrategy(BudgetedSectionStrategy):
+    key = "episodes"
+    title = "Episodes"
+
+    def handle(self, state: ContextBuildState) -> ContextBuildState:
+        if state.budget <= 0:
+            return state
+        return super().handle(state)
+
+    def lines(self, bundle: RetrievalBundle) -> List[str]:
+        return [e.summary.strip() or "(no summary)" for e in bundle.episodes]
+
+
+class DecisionsStrategy(BudgetedSectionStrategy):
+    key = "decisions"
+    title = "Decision Records"
+
+    def handle(self, state: ContextBuildState) -> ContextBuildState:
+        if state.budget <= 0:
+            return state
+        return super().handle(state)
+
+    def lines(self, bundle: RetrievalBundle) -> List[str]:
+        return [
+            f"{decision.title}: {decision.decision} (status={decision.status}, id={decision.id})"
+            for decision in bundle.decisions
+        ]
+
+
+class RelevantExperienceStrategy(BudgetedSectionStrategy):
+    key = "relevant_experience"
+    title = "Relevant Experience"
+
+    def handle(self, state: ContextBuildState) -> ContextBuildState:
+        if state.budget <= 0:
+            return state
+        return super().handle(state)
+
+    def lines(self, bundle: RetrievalBundle) -> List[str]:
+        return [
+            (
+                f"{experience.goal}: lesson={experience.lesson}; "
+                f"reuse_when={', '.join(experience.reuse_when) or 'n/a'} "
+                f"(confidence={experience.confidence:.2f}, id={experience.id})"
+            )
+            for experience in bundle.experiences
+        ]
+
+
+class SemanticNotesStrategy(BudgetedSectionStrategy):
+    key = "semantic_notes"
+    title = "Semantic Notes"
+
+    def handle(self, state: ContextBuildState) -> ContextBuildState:
+        if state.budget <= 0:
+            return state
+        return super().handle(state)
+
+    def lines(self, bundle: RetrievalBundle) -> List[str]:
+        return [
+            (o.payload.get("text") or str(o.payload)).strip()
+            for o in bundle.semantic_chunks
+            if (o.payload or {})
+        ]
+
+
+class EmptyContextAdvisoryStrategy:
+    key = "empty_context_advisory"
+
+    def handle(self, state: ContextBuildState) -> ContextBuildState:
+        if not state.sections:
+            state.advisories.append(
+                "No relevant items found for the query or context budget too small; nothing included."
+            )
+
+        return state
+
+
+def _context_strategy_chain(intent: str | None = None) -> List[ContextBuildStrategy]:
+    strategies: dict[str, ContextBuildStrategy] = {
+        strategy.key: strategy
+        for strategy in [
+            ConflictsStrategy(),
+            CurrentBeliefsStrategy(),
+            FactsStrategy(),
+            EpisodesStrategy(),
+            DecisionsStrategy(),
+            RelevantExperienceStrategy(),
+            SemanticNotesStrategy(),
+        ]
+    }
+    profile = MemoryPlanner().profile(intent)
+    ordered = [
+        strategies[key]
+        for key in profile.context_sections
+        if key in strategies
+    ]
+    return [
+        *ordered,
+        EmptyContextAdvisoryStrategy(),
+    ]
+
+
+def build_context(
+    bundle: RetrievalBundle,
+    max_tokens: int,
+    consistency: IConsistencyEngine | None = None,
+    intent: str | None = None,
+) -> Tuple[ContextPack, List[str]]:
     """
     Собираем секции в порядке приоритета с учётом бюджета.
     Возвращает ContextPack и список advisories.
     """
-    advisories: List[str] = []
-    budget = max_tokens
+    state = ContextBuildState(bundle=bundle, budget=max_tokens, consistency=consistency, intent=intent)
 
-    # Подготовим кандидатные строки по секциям
-    conflicts_lines: List[str] = []
-    # conflicts вычисляет Orchestrator; здесь — если bundle.citations содержит подсказки,
-    # пропустим. Для совместимости оставляем пусто — наполнит Orchestrator.
-    # Этот билдер отвечает только за бюджет/усечение, а не за детект конфликтов.
+    for strategy in _context_strategy_chain(intent):
+        state = strategy.handle(state)
 
-    facts_lines = [f"{f.subject} {f.predicate} {f.object}" for f in bundle.facts]
-    episodes_lines = [e.summary.strip() or "(no summary)" for e in bundle.episodes]
-    notes_lines = [
-        (o.payload.get("text") or str(o.payload)).strip() for o in bundle.semantic_chunks
-        if (o.payload or {})
-    ]
+    return ContextPack(sections=state.sections, advisories=state.advisories), state.advisories
 
-    # Заведём результат
-    sections: List[ContextSection] = []
 
-    # 1) Conflicts — не заполняем здесь (см. Orchestrator), но зарезервируем слот: билдер сможет их усечь
-    # вернём пустой список для обратной совместимости; Orchestrator подставит готовые строки.
+def _format_belief_line(belief) -> str:
+    if belief.current is None:
+        variants = ", ".join(belief.variants) if belief.variants else "none"
+        return f"{belief.key}: no current belief; historical variants: {variants}"
 
-    # 2) Facts
-    if facts_lines:
-        take, trimmed = _take_lines_up_to_budget(facts_lines, budget)
-        sections.append(_section("Facts", take))
-        used = _tok_count("\n".join(take))
-        budget = max(0, budget - used)
-        if trimmed:
-            advisories.append("Facts trimmed to fit context budget.")
+    current = belief.current
+    line = (
+        f"{belief.key}: CURRENT {current.subject} {current.predicate} {current.object} "
+        f"(fact_id={current.id}, score={belief.current_score:.2f}, status={belief.status})"
+    )
 
-    # 3) Episodes
-    if budget > 0 and episodes_lines:
-        take, trimmed = _take_lines_up_to_budget(episodes_lines, budget)
-        sections.append(_section("Episodes", take))
-        used = _tok_count("\n".join(take))
-        budget = max(0, budget - used)
-        if trimmed:
-            advisories.append("Episodes trimmed to fit context budget.")
+    if belief.alternatives:
+        alternatives = ", ".join(
+            f"{fact.object} [{fact.id}]"
+            for fact in belief.alternatives[:5]
+        )
+        line += f"; historical/alternative: {alternatives}"
 
-    # 4) Semantic Notes (наименее приоритетные)
-    if budget > 0 and notes_lines:
-        take, trimmed = _take_lines_up_to_budget(notes_lines, budget)
-        sections.append(_section("Semantic Notes", take))
-        used = _tok_count("\n".join(take))
-        budget = max(0, budget - used)
-        if trimmed:
-            advisories.append("Semantic Notes trimmed to fit context budget.")
-
-    # Если бюджета изначально не хватило ни на что
-    if not sections:
-        advisories.append("No relevant items found for the query or context budget too small; nothing included.")
-
-    return ContextPack(sections=sections, advisories=advisories), advisories
+    return line

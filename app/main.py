@@ -15,6 +15,7 @@ from app.logging import setup_logging
 from app.middlewares import tracing_middleware, RequestIdMiddleware, MetricsMiddleware
 from app.ratelimit import RateLimitMiddleware
 from app.metrics import router as metrics_router
+from app.api_v1 import build_v1_router
 from app.services.answering import quality_judge
 import logging
 
@@ -26,6 +27,10 @@ class ContextIn(BaseModel):
     q: str = ""
     max_tokens: Optional[int] = None
     draft: Optional[bool] = False
+    lang: Literal["en","ru"] = "en"
+    style: Literal["concise", "bullets", "detailed", "plain"] = "concise"
+    intent: Optional[str] = None
+    mode: Optional[str] = None
 
 
 
@@ -33,6 +38,8 @@ class RetrieveIn(BaseModel):
     q: str
     k_sem: int = 5
     k_eps: int = 3
+    intent: Optional[str] = None
+    mode: Optional[str] = None
 
 
 class GenerateIn(BaseModel):
@@ -54,6 +61,8 @@ class AnswerIn(BaseModel):
     style: Literal["concise", "bullets", "detailed", "plain"] = "concise"
     temperature: Optional[float] = None
     max_tokens: Optional[int] = None  # для сборки контекста
+    intent: Optional[str] = None
+    mode: Optional[str] = None
 
 class AnswerOut(BaseModel):
     answer: str
@@ -108,6 +117,7 @@ def create_app() -> FastAPI:
     attach_repos(vrepo, grepo, erepo, _WritebackAdapter())
     app.include_router(admin_router)
     app.include_router(metrics_router, tags=["metrics"])
+    app.include_router(build_v1_router(memory, orchestrator))
 
     global llm_provider
     llm_provider = memory.llm  # может быть и None
@@ -128,10 +138,9 @@ def create_app() -> FastAPI:
 
     @app.post("/retrieve", response_model=RetrievalBundle)
     def retrieve(inp: RetrieveIn):
-        out = retriever.retrieve(inp.q, inp.k_sem, inp.k_eps)
+        out = retriever.retrieve(inp.q, inp.k_sem, inp.k_eps, intent=inp.intent, mode=inp.mode)
         metrics.inc("retrieve_calls", 1)
         return out
-
     @app.post("/writeback", response_model=WriteReport)
     def writeback(objs: list[dict]):
         rep = memory.write_items(objs)
@@ -155,7 +164,9 @@ def create_app() -> FastAPI:
     @app.post("/context", response_model=ContextPack)
     def context(inp: Optional[ContextIn] = None):
         q = "" if inp is None else inp.q
-        bundle = orchestrator.plan_retrieval(q)
+        intent = None if inp is None else inp.intent
+        mode = None if inp is None else inp.mode
+        bundle = orchestrator.plan_retrieval(q, intent=intent, mode=mode)
 
         # временно «подменим» бюджет из запроса
         if inp and inp.max_tokens:
@@ -163,33 +174,33 @@ def create_app() -> FastAPI:
             old = _settings.context_max_tokens
             try:
                 _settings.context_max_tokens = int(inp.max_tokens)
-                pack = orchestrator.assemble_context(bundle)
+                pack = orchestrator.assemble_context(bundle, intent=intent, mode=mode)
             finally:
                 _settings.context_max_tokens = old
         else:
-            pack = orchestrator.assemble_context(bundle)
+            pack = orchestrator.assemble_context(bundle, intent=intent, mode=mode)
 
         # черновик ответа при наличии провайдера
         if inp and inp.draft and llm_provider is not None:
             sections_as_text = [f"{s.title}:\n{s.body}" for s in pack.sections]
             msgs = prompt_renderer.make_messages(inp.q, sections_as_text, lang=inp.lang, style=inp.style)
             res = llm_provider.generate(msgs, temperature=settings.llm_temperature)
-            pack.advisories = list(dict.fromkeys(pack.advisories + [f"DRAFT: {res.get('text','').strip()}"]))
+            pack.advisories = list(dict.fromkeys(pack.advisories + [f"DRAFT: {res.get('text','').strip()}" ]))
         return pack
     
     @app.post("/answer", response_model=AnswerOut)
     def answer(inp: AnswerIn):
         # 1) планируем и собираем контекст (учтём max_tokens, если задан)
-        bundle = orchestrator.plan_retrieval(inp.q)
+        bundle = orchestrator.plan_retrieval(inp.q, intent=inp.intent, mode=inp.mode)
         if inp.max_tokens:
             old = settings.context_max_tokens
             settings.context_max_tokens = int(inp.max_tokens)
             try:
-                pack = orchestrator.assemble_context(bundle)
+                pack = orchestrator.assemble_context(bundle, intent=inp.intent, mode=inp.mode)
             finally:
                 settings.context_max_tokens = old
         else:
-            pack = orchestrator.assemble_context(bundle)
+            pack = orchestrator.assemble_context(bundle, intent=inp.intent, mode=inp.mode)
 
 
         # 1.1) (ищем конфликты среди фактов, которые попали в текущий bundle)
@@ -221,8 +232,14 @@ def create_app() -> FastAPI:
         # 4) Генерация ответа LLM
         sections_as_text = [f"{s.title}:\n{s.body}" for s in pack.sections]
         msgs = prompt_renderer.make_messages(inp.q, sections_as_text, lang=inp.lang, style = "concise" if inp.style == "plain" else inp.style)
-        res = llm_provider.generate(msgs, temperature=inp.temperature or settings.llm_temperature)
-        answer_text = (res.get("text") or "").strip()
+        try:
+            res = llm_provider.generate(msgs, temperature=inp.temperature or settings.llm_temperature)
+            answer_text = (res.get("text") or "").strip()
+        except Exception as exc:
+            conflict_prefix = "Conflict detected. " if conflicts else ""
+            answer_text = conflict_prefix + "LLM provider failed; answer unknown from available context."
+            res = {"model": None}
+            pack.advisories.append(f"LLM provider failed: {type(exc).__name__}")
         
         # 5) Оценка качества ответа (галлюцинации/конфликты)        
         used_sections = [

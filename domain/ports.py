@@ -1,7 +1,7 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import List
-from .models import MemoryObject, Fact, Episode, RetrievalBundle, ConflictReport, ContextPack
+from .models import MemoryObject, Fact, Episode, DecisionRecord, ExperienceRecord, RetrievalBundle, ConflictReport, ContextPack
 
 class IMemoryReadRepository(ABC):
     @abstractmethod
@@ -23,16 +23,53 @@ class IEpisodicRepository(ABC):
     @abstractmethod
     def search(self, user: str | None, entities: list[str], k: int = 5) -> List[Episode]: ...
 
+class IDecisionRepository(ABC):
+    @abstractmethod
+    def save_decision(self, decision: DecisionRecord) -> None: ...
+    @abstractmethod
+    def get_decision(self, decision_id: str) -> DecisionRecord | None: ...
+    @abstractmethod
+    def list_decisions(self, status: str | None = None, limit: int | None = None) -> List[DecisionRecord]: ...
+    @abstractmethod
+    def search(self, text: str, k: int = 5) -> List[DecisionRecord]: ...
+
+class IExperienceRepository(ABC):
+    @abstractmethod
+    def save_experience(self, experience: ExperienceRecord) -> None: ...
+    @abstractmethod
+    def get_experience(self, experience_id: str) -> ExperienceRecord | None: ...
+    @abstractmethod
+    def list_experiences(self, limit: int | None = None) -> List[ExperienceRecord]: ...
+    @abstractmethod
+    def search(self, text: str, k: int = 5) -> List[ExperienceRecord]: ...
+
 class IConsistencyEngine(ABC):
     @abstractmethod
     def detect_conflicts(self, facts: List[Fact]) -> ConflictReport: ...
 
 class IRetriever(ABC):
     @abstractmethod
-    def retrieve(self, query: str, k_sem: int = 5, k_eps: int = 3) -> RetrievalBundle: ...
+    def retrieve(
+        self,
+        query: str,
+        k_sem: int = 5,
+        k_eps: int = 3,
+        intent: str | None = None,
+        mode: str | None = None,
+    ) -> RetrievalBundle: ...
 
 class IMemoryOrchestrator(ABC):
     @abstractmethod
-    def plan_retrieval(self, query: str) -> RetrievalBundle: ...
+    def plan_retrieval(
+        self,
+        query: str,
+        intent: str | None = None,
+        mode: str | None = None,
+    ) -> RetrievalBundle: ...
     @abstractmethod
-    def assemble_context(self, bundle: RetrievalBundle) -> ContextPack: ...
+    def assemble_context(
+        self,
+        bundle: RetrievalBundle,
+        intent: str | None = None,
+        mode: str | None = None,
+    ) -> ContextPack: ...

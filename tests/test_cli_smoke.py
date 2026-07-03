@@ -2,6 +2,7 @@ from pathlib import Path
 import json
 import subprocess
 import sys
+import uuid
 
 def _run(args):
     # poetry run python -m app.cli ...   (чтобы не зависеть от entry point)
@@ -9,7 +10,9 @@ def _run(args):
 
 def test_load_facts_and_notes(tmp_path: Path):
     facts = tmp_path / "facts.json"
-    facts.write_text(json.dumps([{"id":"f1","subject":"alice","predicate":"at","object":"lighthouse"}]), encoding="utf-8")
+    fact_id = f"f-{uuid.uuid4().hex}"
+    subject = f"alice-{uuid.uuid4().hex}"
+    facts.write_text(json.dumps([{"id":fact_id,"subject":subject,"predicate":"at","object":"lighthouse"}]), encoding="utf-8")
     notes = tmp_path / "notes.md"
     notes.write_text("# Hello\nSimple note", encoding="utf-8")
 

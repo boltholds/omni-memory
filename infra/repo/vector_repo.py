@@ -90,6 +90,19 @@ class VectorStoreRepo(IMemoryReadRepository, IMemoryWriteRepository):
 
     def count(self) -> int:
         return len(self._ids)
+
+    def clear(self) -> int:
+        removed = self.count()
+        self._index = faiss.IndexFlatIP(self._dim)
+        self._ids.clear()
+        self._store.clear()
+        self._sigs.clear()
+        self._sig_index.clear()
+        try:
+            VECTOR_SIZE.set(self.count())
+        except Exception:
+            pass
+        return removed
     
     # ---- write ----
     def save_object(self, obj: MemoryObject) -> bool:

@@ -3,13 +3,10 @@ from __future__ import annotations
 import hashlib
 import math
 import re
-from typing import List, Protocol, Optional, Iterable
+from typing import List, Optional, Iterable
 import numpy as np
 
-class Embedder(Protocol):
-    dim: int
-    def embed(self, texts: List[str]) -> np.ndarray: ...
-    def embed_one(self, text: str) -> np.ndarray: ...
+from domain.model_ports import IEmbedder as Embedder
 
 # ---------- Hash ----------
 
@@ -84,18 +81,10 @@ class STEmbedder:
     def embed_one(self, text: str) -> np.ndarray:
         return self.embed([text])[0]
 
-# ---------- Фабрика по настройкам ----------
+# ---------- Backward-compatible factory import ----------
 
 def build_embedder(backend: str = "auto", model_name: str = "sentence-transformers/all-MiniLM-L6-v2") -> Embedder:
-    """
-    backend: "auto" | "st" | "hash"
-    """
-    if backend == "hash":
-        return HashEmbedder()
-    if backend == "st":
-        return STEmbedder(model_name=model_name)
-    # auto: сначала пробуем ST, иначе hash
-    try:
-        return STEmbedder(model_name=model_name)
-    except Exception:
-        return HashEmbedder()
+    """Compatibility wrapper. Prefer infra.embeddings.build_embedder."""
+    from infra.embeddings.factory import build_embedder as _build_embedder
+
+    return _build_embedder(backend=backend, model_name=model_name)

@@ -17,20 +17,20 @@ class OllamaLLM(ILLMProvider):
         self.model = model or settings.llm_ollama_model
         self.base = (base_url or settings.ollama_base_url or "http://localhost:11434/v1").rstrip("/")
 
-    def generate(self, messages: List[Msg], temperature: float = 0.3) -> LLMResult:
+    def generate(self, messages: List[Msg], temperature: float | None = None) -> LLMResult:
         url = f"{self.base}/api/chat"
 
         payload = {
             "model": self.model,
             "messages": messages,
-            "options": {"temperature": float(temperature)},
+            "options": {"temperature": 0.3 if temperature is None else float(temperature)},
             "stream": False,
         }
 
         t0 = time.perf_counter()
 
         try:
-            with httpx.Client(timeout=120.0) as client:
+            with httpx.Client(timeout=httpx.Timeout(30.0, connect=2.0)) as client:
                 r = client.post(url, json=payload)
                 dur = int((time.perf_counter() - t0) * 1000)
                 r.raise_for_status()

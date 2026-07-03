@@ -30,6 +30,10 @@ py-spy = "^0.4.1"
 starlette = "^0.47.3"
 prometheus-client = "^0.22.1"
 faiss-cpu = "^1.13.2"
+sqlalchemy = "^2.0.36"
+alembic = "^1.14.0"
+psycopg = { version = "^3.2.3", extras = ["binary"] }
+mcp = "<1.28"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.4.2"

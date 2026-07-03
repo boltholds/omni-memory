@@ -1,66 +1,23 @@
 from __future__ import annotations
-from typing import List
-from domain.llm import ILLMProvider, Msg, LLMResult
+
 from app.config import settings
-from app.stats import stats
+from infra.llm.llm_openai_compatible import OpenAICompatibleLLM
 
-import logging
-import time
-log = logging.getLogger("app.llm")
-from app.metrics import LLM_CALLS, LLM_LATENCY
 
-class OpenAILLM(ILLMProvider):
-    def __init__(self, model: str | None = None):
-        from openai import OpenAI  # type: ignore
-        self.client = OpenAI(
-            api_key=settings.openai_api_key or "EMPTY",
-            base_url=(settings.openai_base_url or "").rstrip("/") or None,
-            timeout=30.0,  # короткий таймаут
+class OpenAILLM(OpenAICompatibleLLM):
+    """OpenAI adapter kept for backwards compatibility."""
+
+    def __init__(
+        self,
+        model: str | None = None,
+        *,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        timeout: float = 120.0,
+    ) -> None:
+        super().__init__(
+            model=model or settings.llm_model,
+            api_key=api_key if api_key is not None else settings.openai_api_key,
+            base_url=base_url if base_url is not None else settings.openai_base_url,
+            timeout=timeout,
         )
-        self.model = model or settings.llm_model
-        self.status = "init"
-
-    def generate(self, messages: List[Msg], temperature: float = 0.3) -> LLMResult:
-        t0 = time.perf_counter()
-        stop_llm = stats.timeit("llm.call_ms")
-        self.status = "ok"
-        try:
-            resp = self.client.chat.completions.create(
-                model=self.model,
-                messages=[{"role": m["role"], "content": m["content"]} for m in messages],
-                temperature=temperature,
-                stream=False,
-            )
-            dur = int((time.perf_counter() - t0) * 1000)
-
-            choice = resp.choices[0]
-            text = choice.message.content or ""
-            usage = getattr(resp, "usage", None) or {}
-
-            log.info("llm_call_ok", extra={
-                "model": self.model,
-                "duration_ms": dur,
-                "prompt_tokens": getattr(usage, "prompt_tokens", 0),
-                "completion_tokens": getattr(usage, "completion_tokens", 0),
-            })
-
-            return {
-                "text": text,
-                "model": self.model,
-                "prompt_tokens": getattr(usage, "prompt_tokens", 0) or 0,
-                "completion_tokens": getattr(usage, "completion_tokens", 0) or 0,
-                "finish_reason": getattr(choice, "finish_reason", "") or "",
-            }
-        except Exception:
-            
-            self.status = "error"
-            log.exception("llm_call_failed", extra={
-                "model": self.model,
-                "duration_ms": dur,
-            })
-            raise
-        finally:
-            dur = int((time.perf_counter() - t0) * 1000)
-            stop_llm()
-            LLM_CALLS.labels(self.model, self.status).inc()
-            LLM_LATENCY.labels(self.model, self.status).observe(dur)

@@ -46,6 +46,12 @@ class Settings(BaseSettings):
     rate_limit_per_min: int = 60                # запросов в минуту на IP
     rate_limit_burst: int = 30                  # начальный "запас"
     request_id_header: str = "X-Request-Id"     # вход/выход заголовок
+
+    # optional SQL persistence for product audit/governance layer
+    memory_database_url: str | None = None
+    memory_audit_enabled: bool = False
+    memory_audit_auto_create: bool = False
+    memory_audit_default_limit: int = 50
     
     # episodic storage
     sqlite_path: str = ":memory:"    # "data/omni.db" в prod

@@ -5,10 +5,11 @@ import re
 
 from typing import Any, Dict, Literal, Protocol, runtime_checkable
 from pydantic import BaseModel, Field, ConfigDict
-from domain.models import Fact, Episode ,Provenance, MemoryObject
+from domain.models import Fact, Episode, DecisionRecord, ExperienceRecord, Provenance, MemoryObject
+from domain.operations import MemoryOperation, PolicyDecision
 
 
-DomainMemoryObject = MemoryObject | Fact | Episode
+DomainMemoryObject = MemoryObject | Fact | Episode | DecisionRecord | ExperienceRecord
 
 
 class WritebackContext(BaseModel):
@@ -32,6 +33,8 @@ class WritebackContext(BaseModel):
     vector_repo: Any | None = None
     graph_repo: Any | None = None
     episodic_repo: Any | None = None
+    decision_repo: Any | None = None
+    experience_repo: Any | None = None
 
     seen_note_signatures: set[str] = Field(default_factory=set)
 
@@ -63,7 +66,7 @@ class WritebackRawItem(BaseModel):
 
 
 class WritebackSavedItem(BaseModel):
-    kind: Literal["note", "fact", "episode"]
+    kind: Literal["note", "fact", "episode", "decision", "experience"]
     id: str
 
 
@@ -141,6 +144,9 @@ class WritebackResult(BaseModel):
     rejected: list[WritebackDecision] = Field(default_factory=list)
     errors: list[WritebackDecision] = Field(default_factory=list)
 
+    policy_decisions: list[PolicyDecision] = Field(default_factory=list)
+    operations: list[MemoryOperation] = Field(default_factory=list)
+
     @property
     def saved_count(self) -> int:
         return len(self.saved)
@@ -181,6 +187,12 @@ class WritebackResult(BaseModel):
 
     def add_error(self, decision: WritebackDecision) -> None:
         self.errors.append(decision)
+
+    def add_policy_decision(self, decision: PolicyDecision) -> None:
+        self.policy_decisions.append(decision)
+
+    def add_operation(self, operation: MemoryOperation) -> None:
+        self.operations.append(operation)
 
 
 class WritebackRequest(BaseModel):
@@ -258,6 +270,12 @@ def get_memory_kind(memory_object: DomainMemoryObject | None) -> str | None:
 
     if isinstance(memory_object, Episode):
         return "episode"
+
+    if isinstance(memory_object, DecisionRecord):
+        return "decision"
+
+    if isinstance(memory_object, ExperienceRecord):
+        return "experience"
 
     if isinstance(memory_object, MemoryObject):
         return memory_object.type
