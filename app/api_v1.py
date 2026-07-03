@@ -27,6 +27,7 @@ class MemorySearchIn(BaseModel):
     k_eps: int = 3
     intent: str | None = None
     mode: str | None = None
+    scope: dict[str, Any] = Field(default_factory=dict)
 
 
 class MemoryContextIn(BaseModel):
@@ -36,6 +37,7 @@ class MemoryContextIn(BaseModel):
     style: Literal["concise", "bullets", "detailed", "plain"] = "concise"
     intent: str | None = None
     mode: str | None = None
+    scope: dict[str, Any] = Field(default_factory=dict)
 
 
 def build_v1_router(memory, orchestrator) -> APIRouter:
@@ -57,8 +59,9 @@ def build_v1_router(memory, orchestrator) -> APIRouter:
         max_tokens: int | None = None,
         intent: str | None = None,
         mode: str | None = None,
+        scope: dict[str, Any] | None = None,
     ):
-        bundle = orchestrator.plan_retrieval(q, intent=intent, mode=mode)
+        bundle = orchestrator.plan_retrieval(q, intent=intent, mode=mode, scope=scope)
         if max_tokens:
             old = settings.context_max_tokens
             settings.context_max_tokens = int(max_tokens)
@@ -113,6 +116,7 @@ def build_v1_router(memory, orchestrator) -> APIRouter:
             k_eps=inp.k_eps,
             intent=inp.intent,
             mode=inp.mode,
+            scope=inp.scope,
         )
         metrics.inc("v1_memory_search_calls", 1)
         return bundle.model_dump(mode="json")
@@ -149,6 +153,7 @@ def build_v1_router(memory, orchestrator) -> APIRouter:
             inp.max_tokens,
             intent=inp.intent,
             mode=inp.mode,
+            scope=inp.scope,
         )
         metrics.inc("v1_context_calls", 1)
         return {
