@@ -20,7 +20,7 @@ interaction / event / command
 These modules form the stable architecture surface:
 
 ```text
-domain/models.py          typed memory records: Fact, Episode, DecisionRecord, ExperienceRecord, SkillRecord, FailurePatternRecord
+domain/models.py          typed memory records, MemoryScope and DomainGraph records
 domain/writeback.py       writeback request/result/decision contracts
 domain/operations.py      operation and policy-decision audit envelopes
 app/memory.py             public OmniMemory facade
@@ -36,7 +36,7 @@ app/api_v1.py             product-facing HTTP API
 ```text
 benchmarks/memory_eval/   memory-vs-no-memory benchmark
 infra/db/                 optional SQL audit persistence
-infra/repo/               in-memory repositories for facts, decisions, experience, skills and failure patterns
+infra/repo/               in-memory repositories for facts, decisions, experience, domains, skills and failure patterns
 docs/                     architecture, persistence and demo docs
 migrations/               Alembic migrations for audit persistence
 ```
@@ -67,13 +67,39 @@ SkillRecord           reusable procedure promoted from repeated successful exper
 FailurePatternRecord  symptom/cause/fix/detection pattern promoted from repeated failures
 ```
 
+## Memory hygiene and domain graph
+
+Every memory object can carry canonical scope metadata in `meta.scope`:
+
+```text
+tenant_id
+agent_id
+domain_ids
+environment: prod | dev | test | benchmark | sandbox
+durability: durable | ephemeral | session
+visibility: private | shared | global
+exclude_from_consolidation
+```
+
+Projects are not stored as a separate `project_id`. A project is a `DomainNode(kind="project")` in the domain graph, and memory records refer to project/area/environment nodes through `domain_ids`.
+
+The first hygiene policy is conservative:
+
+```text
+source=test / pytest       -> environment=test, durability=ephemeral, exclude_from_consolidation=true
+source=benchmark / eval    -> environment=benchmark, durability=ephemeral, exclude_from_consolidation=true
+durable private memory with no domain_ids -> scope warning, not rejection
+```
+
+This keeps test fixtures and benchmark artifacts out of long-term consolidation while avoiding a hard breaking change for existing write paths.
+
 ## Policy-first writeback
 
 Every write passes through:
 
 ```text
 conversion policy
-provenance policy
+provenance + scope policy
 TTL policy
 PII policy
 conflict policy
