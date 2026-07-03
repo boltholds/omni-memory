@@ -49,6 +49,9 @@ def build_v1_router(memory, orchestrator) -> APIRouter:
             "auto_create": settings.memory_audit_auto_create,
         }
 
+    def audit_items(items: list[dict[str, Any]]) -> dict[str, Any]:
+        return {"audit_persistence": audit_status(), "items": items}
+
     def assemble_context_for_query(
         q: str,
         max_tokens: int | None = None,
@@ -113,6 +116,30 @@ def build_v1_router(memory, orchestrator) -> APIRouter:
         )
         metrics.inc("v1_memory_search_calls", 1)
         return bundle.model_dump(mode="json")
+
+    @router.get("/memories")
+    def list_memory_records(limit: int = settings.memory_audit_default_limit):
+        if audit_repo is None:
+            return audit_items([])
+        return audit_items(audit_repo.list_memory_records(limit=limit))
+
+    @router.get("/audit/operations")
+    def list_operations(limit: int = settings.memory_audit_default_limit):
+        if audit_repo is None:
+            return audit_items([])
+        return audit_items(audit_repo.list_operations(limit=limit))
+
+    @router.get("/audit/decisions")
+    def list_decisions(limit: int = settings.memory_audit_default_limit):
+        if audit_repo is None:
+            return audit_items([])
+        return audit_items(audit_repo.list_policy_decisions(limit=limit))
+
+    @router.get("/audit/reviews")
+    def list_reviews(limit: int = settings.memory_audit_default_limit):
+        if audit_repo is None:
+            return audit_items([])
+        return audit_items(audit_repo.list_review_candidates(limit=limit))
 
     @router.post("/context")
     def context(inp: MemoryContextIn):
