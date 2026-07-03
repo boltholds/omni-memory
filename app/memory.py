@@ -9,6 +9,7 @@ from .orchestrator import Orchestrator
 from .prompting import PromptRenderer
 from .retriever import Retriever
 from app.agent_cycle import AgentCycleRecord
+from app.consolidation import ConsolidationResult, ExperienceConsolidator
 from app.fact_maintenance import FactMaintenanceCommand, FactMaintenanceResult, FactMaintenanceService
 from app.memory_commands import (
     MemoryCommandContext,
@@ -141,6 +142,11 @@ class OmniMemory:
         self.consistency = SimpleConsistencyEngine()
         self.orchestrator = Orchestrator(self.retriever, self.consistency)
         self.fact_maintenance = FactMaintenanceService(self.repositories.graph)
+        self.consolidator = ExperienceConsolidator(
+            experience_repo=self.repositories.experience,
+            skill_repo=self.repositories.skill,
+            failure_pattern_repo=self.repositories.failure_pattern,
+        )
         self.writeback_service = build_writeback_service(repositories=self.repositories, reject_conflicts=reject_conflicts)
         self.command_interpreter = MemoryCommandInterpreter(MemoryCommandContext(writeback_service=self.writeback_service))
         self.distiller = distiller or bundle.distiller
@@ -185,6 +191,9 @@ class OmniMemory:
 
     def record_agent_cycle(self, cycle: AgentCycleRecord | dict[str, Any], *, source: str = "agent-cycle") -> WriteReport:
         return self.command_interpreter.execute(RecordAgentCycleCommand(cycle=cycle, source=source))
+
+    def consolidate_experiences(self, *, dry_run: bool = True, min_confidence: float = 0.85) -> ConsolidationResult:
+        return self.consolidator.consolidate(dry_run=dry_run, min_confidence=min_confidence)
 
     def ingest_turn(self, role: str, content: str) -> None:
         self._session_turns.append(SessionTurn(role=role, content=content))
