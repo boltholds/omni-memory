@@ -1,35 +1,47 @@
-from fastapi import APIRouter, Depends
-from infra.repo.episodic_repo import _jload
-from app.export_import import export_memory, import_memory
-from typing import Any, Dict
-from app.writeback_legacy import WriteBackService
-from pydantic import BaseModel
-import time
-import logging
+from __future__ import annotations
+
 import cProfile
-import pstats
 import io
+import logging
+import pstats
+import time
+from typing import Any, Dict, Protocol
+
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel
+
+from app.export_import import export_memory, import_memory
 from app.security import admin_api_key_guard
+from infra.repo.episodic_repo import _jload
+
+
+class WritebackFacade(Protocol):
+    def write(self, items: list[dict[str, Any]]):
+        ...
+
 
 class LogLevelIn(BaseModel):
     level: str  # DEBUG|INFO|WARNING|ERROR
 
+
 class VectorPathIn(BaseModel):
     dir: str
+
 
 class GCRequest(BaseModel):
     dry_run: bool = False
     now: float | None = None
+
 
 class ProfileReq(BaseModel):
     seconds: int = 5  # лимит
     target: str = "answer"  # "retrieve"|"context"|"answer"
 
 
-router = APIRouter(prefix="/admin", tags=["admin"])
 router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(admin_api_key_guard)])
 
-def attach_repos(vrepo, grepo, erepo, writeback: WriteBackService | None = None):
+
+def attach_repos(vrepo, grepo, erepo, writeback: WritebackFacade | None = None):
     router.state = {"vrepo": vrepo, "grepo": grepo, "erepo": erepo, "writeback": writeback}  # type: ignore[attr-defined]
 
 
@@ -48,11 +60,13 @@ def reset():
 
     return {"status": "reset"}
 
+
 @router.get("/export")
 def export_all():
     st = router.state  # type: ignore[attr-defined]
     data = export_memory(st["vrepo"], st["grepo"], st["erepo"])
     return data
+
 
 @router.post("/import")
 def import_all(archive: Dict[str, Any]):
@@ -70,11 +84,13 @@ def vector_save(inp: VectorPathIn):
     st["vrepo"].save(inp.dir)
     return {"status": "ok", "dir": inp.dir}
 
+
 @router.post("/vector/load")
 def vector_load(inp: VectorPathIn):
     st = router.state  # type: ignore[attr-defined]
     st["vrepo"].load(inp.dir)
     return {"status": "ok", "dir": inp.dir}
+
 
 @router.post("/log-level")
 def set_log_level(inp: LogLevelIn):
@@ -126,9 +142,9 @@ def gc(inp: GCRequest):
     # dry-run: просто посчитаем
     if inp.dry_run:
         # «подсчёт» на глаз из внутренностей (минимально — прогоним логику без удаления)
-        v_dead = sum(1 for obj in st["vrepo"]._store.values() if (obj.meta or {}).get("expire_at", now+1) < now)  # type: ignore[attr-defined]
+        v_dead = sum(1 for obj in st["vrepo"]._store.values() if (obj.meta or {}).get("expire_at", now + 1) < now)  # type: ignore[attr-defined]
         g_dead = 0
-        for s,o,k,data in st["grepo"]._g.edges(keys=True, data=True):  # type: ignore[attr-defined]
+        for s, o, k, data in st["grepo"]._g.edges(keys=True, data=True):  # type: ignore[attr-defined]
             exp = (data.get("meta") or {}).get("expire_at")
             if exp is not None and float(exp) < now:
                 g_dead += 1
