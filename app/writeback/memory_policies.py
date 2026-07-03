@@ -9,21 +9,23 @@ from typing import Any
 from pydantic import BaseModel
 from domain.models import Provenance, Fact, Episode, MemoryObject
 
+from app.memory_hygiene import normalize_memory_scope_meta
 from domain.writeback import (
     MemoryWritePolicy,
     WritebackContext,
     WritebackDecision,
     extract_text,
-    text_signature
+    text_signature,
 )
 
 DomainMemoryObject = MemoryObject | Fact | Episode
 
 class ProvenancePolicy(MemoryWritePolicy):
     """
-    Гарантирует, что у объекта есть provenance.
+    Гарантирует, что у объекта есть provenance and canonical memory scope.
 
     Если source/time не заполнены, подставляет batch source и текущее время.
+    Scope хранится в meta["scope"], чтобы не ломать старые Pydantic-схемы.
     """
 
     name = "provenance"
@@ -38,18 +40,26 @@ class ProvenancePolicy(MemoryWritePolicy):
         source = provenance.source or context.source or "user"
         timestamp = provenance.time or time.time()
 
-        meta = dict(provenance.meta or {})
+        provenance_meta = dict(provenance.meta or {})
         if context.meta:
-            meta.setdefault("writeback", {})
-            meta["writeback"].update(context.meta)
+            provenance_meta.setdefault("writeback", {})
+            provenance_meta["writeback"].update(context.meta)
+
+        object_meta = normalize_memory_scope_meta(
+            dict(memory_object.meta or {}),
+            source=source,
+            context_meta=dict(context.meta or {}),
+            memory_object=memory_object,
+        )
 
         updated = memory_object.model_copy(
             update={
                 "provenance": Provenance(
                     source=source,
                     time=timestamp,
-                    meta=meta,
-                )
+                    meta=provenance_meta,
+                ),
+                "meta": object_meta,
             }
         )
 
