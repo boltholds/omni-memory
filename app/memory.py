@@ -12,6 +12,7 @@ from app.agent_cycle import AgentCycleRecord
 from app.consolidation import ConsolidationResult, ExperienceConsolidator
 from app.development_cycle import DevelopmentCycleDraft, DevelopmentCycleRecorder
 from app.fact_maintenance import FactMaintenanceCommand, FactMaintenanceResult, FactMaintenanceService
+from app.fact_mining import FactExtractor, FactMiningResult, FactMiningService
 from app.memory_commands import (
     MemoryCommandContext,
     MemoryCommandInterpreter,
@@ -114,6 +115,7 @@ class OmniMemory:
         llm: Any | None = None,
         embedder: IEmbedder | None = None,
         model_bundle: ModelBundle | None = None,
+        fact_extractor: FactExtractor | None = None,
     ) -> None:
         bundle = model_bundle or ModelBundle()
         selected_embedder = embedder or bundle.embedder
@@ -165,6 +167,7 @@ class OmniMemory:
         self.reranker = bundle.reranker
         self.prompt_renderer = PromptRenderer()
         self.llm = llm if llm is not None else (bundle.llm or (build_llm() if use_llm else None))
+        self.fact_miner = FactMiningService(writeback_service=self.writeback_service, extractor=fact_extractor, llm=self.llm)
 
     def write_items(self, items: list[dict[str, Any]], *, source: str = "user", dry_run: bool = False, meta: dict[str, Any] | None = None) -> WriteReport:
         result = self.write_items_raw(items, source=source, dry_run=dry_run, meta=meta)
@@ -257,6 +260,18 @@ class OmniMemory:
         if clear and not dry_run:
             self.clear_session()
         return result
+
+    def mine_facts(self, text: str, *, source: str = "fact-mining", dry_run: bool = True, min_confidence: float = 0.75, policy_mode: str = "review", domain_ids: list[str] | None = None, meta: dict[str, Any] | None = None, extractor: FactExtractor | None = None) -> FactMiningResult:
+        return self.fact_miner.mine_text(
+            text,
+            source=source,
+            dry_run=dry_run,
+            min_confidence=min_confidence,
+            policy_mode=policy_mode,  # type: ignore[arg-type]
+            domain_ids=domain_ids or [],
+            meta=meta or {},
+            extractor=extractor,
+        )
 
     def retrieve(self, query: str, *, k_sem: int = 5, k_eps: int = 3, intent: str | None = None, mode: str | None = None, scope: dict[str, Any] | None = None) -> RetrievalBundle:
         return self.retriever.retrieve(query, k_sem=k_sem, k_eps=k_eps, intent=intent, mode=mode, scope=scope)
