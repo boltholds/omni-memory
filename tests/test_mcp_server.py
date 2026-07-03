@@ -85,6 +85,8 @@ def test_mcp_clear_removes_selected_memory_stores():
         "episodes": 0,
         "decisions": 0,
         "experiences": 0,
+        "skills": 0,
+        "failure_patterns": 0,
         "session_turns": 1,
         "dry_run": True,
     }
@@ -97,6 +99,8 @@ def test_mcp_clear_removes_selected_memory_stores():
         "episodes": 0,
         "decisions": 0,
         "experiences": 0,
+        "skills": 0,
+        "failure_patterns": 0,
         "session_turns": 1,
         "dry_run": False,
     }
@@ -106,6 +110,8 @@ def test_mcp_clear_removes_selected_memory_stores():
     assert stats["facts"] == 0
     assert stats["decisions"] == 0
     assert stats["experiences"] == 0
+    assert stats["skills"] == 0
+    assert stats["failure_patterns"] == 0
     assert stats["session_turns"] == 0
     assert handlers["omni_memory_retrieve"](query="alice lighthouse project")["facts"] == []
     assert handlers["omni_memory_retrieve"](query="alice lighthouse project")["semantic_chunks"] == []
@@ -135,6 +141,8 @@ def test_mcp_clear_preserves_excluded_memory_stores():
         "episodes": 0,
         "decisions": 0,
         "experiences": 0,
+        "skills": 0,
+        "failure_patterns": 0,
         "session_turns": 1,
         "dry_run": False,
     }
@@ -142,6 +150,8 @@ def test_mcp_clear_preserves_excluded_memory_stores():
     stats = handlers["omni_memory_stats"]()
     assert stats["vector_objects"] == 0
     assert stats["facts"] == 1
+    assert stats["skills"] == 0
+    assert stats["failure_patterns"] == 0
     assert stats["session_turns"] == 0
 
     retrieved = handlers["omni_memory_retrieve"](query="Where is Alice?")
