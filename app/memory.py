@@ -234,7 +234,21 @@ class OmniMemory:
         return self.development_memory_workflow.start_task(goal=goal, context=context, constraints=constraints, files=files, source=source)
 
     def finish_development_task(self, *, task_id: str | None = None, outcome: str, tests: list[str] | None = None, changed_files: list[str] | None = None, lesson: str = "", decisions: list[str] | None = None, commands_run: list[str] | None = None, side_effects: list[str] | None = None, confidence: float = 0.8, source: str = "development-workflow") -> FinishDevelopmentTaskResult:
-        return self.development_memory_workflow.finish_task(task_id=task_id, outcome=outcome, tests=tests, changed_files=changed_files, lesson=lesson, decisions=decisions, commands_run=commands_run, side_effects=side_effects, confidence=confidence, source=source)
+        return self.development_memory_workflow.finish_task(
+            {
+                "goal": task_id or "Finish development task",
+                "lesson": lesson or "Review this development task and fill a reusable lesson before recording.",
+                "changed_files": changed_files or [],
+                "commands_run": commands_run or [],
+                "tests": tests or [],
+                "decisions": decisions or [],
+                "outcome": outcome,
+                "side_effects": side_effects or [],
+                "confidence": confidence,
+                "source": source,
+                "run_distiller": False,
+            }
+        )
 
     def record_agent_cycle(self, cycle: AgentCycleRecord | dict[str, Any], *, source: str = "agent-cycle") -> WriteReport:
         item = RecordAgentCycleCommand(cycle=cycle, source=source).to_item()
@@ -252,3 +266,89 @@ class OmniMemory:
 
     def ingest_turn(self, role: str, content: str) -> None:
         self._session_turns.append(SessionTurn(role=role, content=content))
+
+    def clear_session(self) -> None:
+        self._session_turns.clear()
+
+    def clear(self, *, include_vectors: bool = True, include_facts: bool = True, include_episodes: bool = True, include_decisions: bool = True, include_experiences: bool = True, include_skills: bool = True, include_failure_patterns: bool = True, include_session: bool = True, dry_run: bool = False) -> MemoryClearReport:
+        command = MemoryClearCommand(include_vectors=include_vectors, include_facts=include_facts, include_episodes=include_episodes, include_decisions=include_decisions, include_experiences=include_experiences, include_skills=include_skills, include_failure_patterns=include_failure_patterns, include_session=include_session, dry_run=dry_run)
+        return command.execute(self.repositories, session_turns=len(self._session_turns), clear_session=self.clear_session)
+
+    def repository_stats(self) -> dict[str, int | None]:
+        return self.repositories.stats()
+
+    def commit_session(self, *, source: str = "session", dry_run: bool = False, meta: dict[str, Any] | None = None, min_confidence: float = 0.75, clear: bool = True) -> WritebackResult:
+        if not self._session_turns:
+            return WritebackResult()
+        if self.distiller is None or not hasattr(self.distiller, "distill_session"):
+            raise RuntimeError("Session distiller is not configured. Pass a distiller with distill_session().")
+        turns = list(self._session_turns)
+        transcript = build_transcript(turns)
+        distillation = self.distiller.distill_session(turns)
+        candidates, rejected = accepted_candidates(distillation, transcript=transcript, validator=ConservativeCandidateValidator(min_confidence=min_confidence))
+        raw_items = candidates_to_writeback_items(candidates, source=source, meta=meta or {"session_rejected": rejected})
+        result = self.writeback_service.write(WritebackRequest(source=source, dry_run=dry_run, meta=meta or {}, items=raw_items))
+        for reason in rejected:
+            from domain.writeback import WritebackDecision
+            result.add_rejected(WritebackDecision.reject(reason=reason, policy="SessionDistillation"))
+        if clear and not dry_run:
+            self.clear_session()
+        return result
+
+    def mine_facts(self, text: str, *, source: str = "fact-mining", dry_run: bool = True, min_confidence: float = 0.75, policy_mode: str = "review", domain_ids: list[str] | None = None, meta: dict[str, Any] | None = None, extractor: FactExtractor | None = None) -> FactMiningResult:
+        return self.fact_miner.mine_text(
+            text,
+            source=source,
+            dry_run=dry_run,
+            min_confidence=min_confidence,
+            policy_mode=policy_mode,  # type: ignore[arg-type]
+            domain_ids=domain_ids or [],
+            meta=meta or {},
+            extractor=extractor,
+        )
+
+    def retrieve(self, query: str, *, k_sem: int = 5, k_eps: int = 3, intent: str | None = None, mode: str | None = None, scope: dict[str, Any] | None = None) -> RetrievalBundle:
+        return self.retriever.retrieve(query, k_sem=k_sem, k_eps=k_eps, intent=intent, mode=mode, scope=scope)
+
+    def build_context(self, query: str, *, intent: str | None = None, mode: str | None = None, scope: dict[str, Any] | None = None) -> ContextPack:
+        bundle = self.orchestrator.plan_retrieval(query, intent=intent, mode=mode, scope=scope)
+        return self.orchestrator.assemble_context(bundle, intent=intent, mode=mode)
+
+    def detect_conflicts(self, query: str | None = None, *, intent: str | None = None, scope: dict[str, Any] | None = None) -> ConflictReport:
+        bundle = self.orchestrator.plan_retrieval(query or "", intent=intent, scope=scope)
+        return self.consistency.detect_conflicts(bundle.facts)
+
+    def maintain_facts(self, command: FactMaintenanceCommand | dict[str, Any]) -> FactMaintenanceResult:
+        return self.fact_maintenance.execute(command)
+
+    def ask(self, question: str, *, lang: str = "en", style: str = "concise", temperature: float | None = None, include_context: bool = True, intent: str | None = None, mode: str | None = None, scope: dict[str, Any] | None = None) -> MemoryAnswer:
+        bundle = self.orchestrator.plan_retrieval(question, intent=intent, mode=mode, scope=scope)
+        pack = self.orchestrator.assemble_context(bundle, intent=intent, mode=mode)
+        conflict_report = self.consistency.detect_conflicts(bundle.facts)
+        if self.llm is None:
+            answer = "LLM provider is not configured. Use retrieve/build_context or pass use_llm=True."
+            model = None
+        else:
+            sections = [f"{s.title}:\n{s.body}" for s in pack.sections]
+            messages = self.prompt_renderer.make_messages(question, sections, lang=lang, style=style)
+            result = self.llm.generate(messages, temperature=temperature)
+            answer = result.get("text", "").strip()
+            model = result.get("model")
+        context: dict[str, Any] = {}
+        if include_context:
+            context = {
+                "facts": [f.model_dump() for f in bundle.facts],
+                "episodes": [e.model_dump() for e in bundle.episodes],
+                "decisions": [d.model_dump() for d in bundle.decisions],
+                "experiences": [e.model_dump() for e in bundle.experiences],
+                "skills": [s.model_dump() for s in bundle.skills],
+                "failure_patterns": [p.model_dump() for p in bundle.failure_patterns],
+                "semantic_chunks": [s.model_dump() for s in bundle.semantic_chunks],
+                "conflicts": [c.model_dump() for c in conflict_report.conflicts],
+                "sections": [s.model_dump() for s in pack.sections],
+            }
+        return MemoryAnswer(answer=answer, advisories=pack.advisories, used_sections=[s.title for s in pack.sections], context=context, model=model)
+
+    @staticmethod
+    def _to_write_report(result: WritebackResult) -> WriteReport:
+        return WriteReport(saved=result.saved_count, rejected=result.rejected_count + result.error_count, reasons=result.reasons)
