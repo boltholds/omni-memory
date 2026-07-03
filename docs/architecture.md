@@ -93,9 +93,9 @@ durable private memory with no domain_ids -> scope warning, not rejection
 
 This keeps test fixtures and benchmark artifacts out of long-term consolidation while avoiding a hard breaking change for existing write paths.
 
-## Domain-aware retrieval
+## Scope-aware retrieval
 
-Domain graph is used as a ranking signal, not as a hard filter:
+Domain graph is used as a ranking signal by default:
 
 ```text
 query text
@@ -105,7 +105,32 @@ query text
   -> downrank test / benchmark / sandbox / ephemeral / session memories
 ```
 
-This means a query about `OmniMemory dependency issue` can prefer OmniMemory-scoped skills over Persona-scoped skills even if both match the lexical query. If no domain is detected, retrieval still works like ordinary memory retrieval, with only hygiene penalties applied.
+Callers can also pass an optional `scope` filter to `OmniMemory.retrieve`, `/v1/memories/search` and `/v1/context`:
+
+```json
+{
+  "domain_ids": ["domain:project:omni-memory"],
+  "strict_domains": true,
+  "environments": ["dev"],
+  "durabilities": ["durable"],
+  "memory_types": ["skill", "failure_pattern"],
+  "include_ephemeral": false,
+  "expand_domains": true
+}
+```
+
+Filter behavior:
+
+```text
+domain_ids + strict_domains=true -> hard keep only matching domain_ids
+domain_ids + strict_domains=false -> boost matching domains and related domains
+environments                    -> hard filter by meta.scope.environment
+durabilities                    -> hard filter by meta.scope.durability
+memory_types                    -> disable unrequested retrieval channels
+include_ephemeral=false         -> hide ephemeral/session memories
+```
+
+This means a query about `OmniMemory dependency issue` can prefer OmniMemory-scoped skills over Persona-scoped skills even if both match the lexical query. If no domain is detected and no scope is provided, retrieval still works like ordinary memory retrieval, with only hygiene penalties applied.
 
 ## Policy-first writeback
 
