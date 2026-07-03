@@ -60,23 +60,34 @@ class DevelopmentExperienceEvaluator:
             reuse_potential=reuse_potential,
             consolidation_tags=tags,
             recommended_memory_type=recommended,
-            meta={"deterministic": True},
+            meta={"deterministic": True, "domain": "development"},
         )
 
 
 class GenericExperienceEvaluator(DevelopmentExperienceEvaluator):
     """Backward-compatible default evaluator using text and explicit success flags."""
 
+    def evaluate(self, experience: ExperienceRecord) -> EvaluationResult:
+        result = super().evaluate(experience)
+        result.consolidation_tags = [tag for tag in result.consolidation_tags if tag != "development"] or ["generic"]
+        result.meta["domain"] = "generic"
+        return result
+
 
 class DomainExperienceEvaluator:
     def __init__(self, evaluators: dict[str, ExperienceEvaluator] | None = None, default: ExperienceEvaluator | None = None) -> None:
-        self.evaluators = evaluators or {}
+        self.evaluators: dict[str, ExperienceEvaluator] = {"development": DevelopmentExperienceEvaluator()}
+        if evaluators:
+            self.evaluators.update(evaluators)
         self.default = default or GenericExperienceEvaluator()
 
     def evaluate(self, experience: ExperienceRecord) -> EvaluationResult:
         domain = _experience_domain(experience)
         evaluator = self.evaluators.get(domain, self.default)
-        return evaluator.evaluate(experience)
+        result = evaluator.evaluate(experience)
+        result.meta.setdefault("routed_domain", domain)
+        result.meta.setdefault("evaluator", evaluator.__class__.__name__)
+        return result
 
 
 def _experience_domain(experience: ExperienceRecord) -> str:
