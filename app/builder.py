@@ -4,6 +4,7 @@ from domain.llm import ILLMProvider
 from domain.model_ports import IEmbedder, ModelBundle
 from domain.repositories import IFactRepo, IVectorRepo
 from domain.distiller import ISessionMemoryDistiller
+from domain.experience_evaluator import ExperienceEvaluator
 from app.fact_mining import FactExtractor
 from app.memory import OmniMemory
 
@@ -29,6 +30,7 @@ def build_memory(
     skill_repo: SkillRepo | None = None,
     failure_pattern_repo: FailurePatternRepo | None = None,
     fact_extractor: FactExtractor | None = None,
+    experience_evaluator: ExperienceEvaluator | None = None,
 ) -> OmniMemory:
     """Build the central OmniMemory facade used by CLI, FastAPI and examples.
 
@@ -40,6 +42,9 @@ def build_memory(
 
     Full BYOM:
         build_memory(model_bundle=ModelBundle(...))
+
+    Domain evaluators:
+        build_memory(experience_evaluator=my_domain_router)
 
     Advanced/tests/CLI:
         build_memory(vector_repo=..., graph_repo=..., episodic_repo=...)
@@ -59,4 +64,5 @@ def build_memory(
         skill_repo=skill_repo,
         failure_pattern_repo=failure_pattern_repo,
         fact_extractor=fact_extractor,
+        experience_evaluator=experience_evaluator,
     )
