@@ -52,7 +52,7 @@ class PromptSettings(BaseModel):
 
 class LoggingSettings(BaseModel):
     level: str
-    json: bool
+    json_enabled: bool
     file: str | None
     rotation_mb: int
     keep_files: int
@@ -207,7 +207,7 @@ class Settings(BaseSettings):
 
     @property
     def logging(self) -> LoggingSettings:
-        return LoggingSettings(level=self.log_level, json=self.log_json, file=self.log_file, rotation_mb=self.log_rotation_mb, keep_files=self.log_keep_files)
+        return LoggingSettings(level=self.log_level, json_enabled=self.log_json, file=self.log_file, rotation_mb=self.log_rotation_mb, keep_files=self.log_keep_files)
 
     @property
     def trace(self) -> TraceSettings:
