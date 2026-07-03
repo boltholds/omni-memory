@@ -8,6 +8,7 @@ from app.memory import OmniMemory
 from infra.repo.episodic_repo import EpisodicRepo
 from infra.repo.decision_repo import DecisionRepo
 from infra.repo.experience_repo import ExperienceRepo
+from infra.repo.cognitive_repo import FailurePatternRepo, SkillRepo
 
 
 def build_memory(
@@ -22,6 +23,8 @@ def build_memory(
     episodic_repo: EpisodicRepo | None = None,
     decision_repo: DecisionRepo | None = None,
     experience_repo: ExperienceRepo | None = None,
+    skill_repo: SkillRepo | None = None,
+    failure_pattern_repo: FailurePatternRepo | None = None,
 ) -> OmniMemory:
     """Build the central OmniMemory facade used by CLI, FastAPI and examples.
 
@@ -48,6 +51,8 @@ def build_memory(
         episodic_repo=episodic_repo,
         decision_repo=decision_repo,
         experience_repo=experience_repo,
+        skill_repo=skill_repo,
+        failure_pattern_repo=failure_pattern_repo,
     )
     
     

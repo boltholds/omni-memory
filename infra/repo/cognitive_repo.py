@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from domain.models import FailurePatternRecord, SkillRecord
 
 
@@ -75,6 +78,86 @@ class FailurePatternRepo:
         removed = len(self._store)
         self._store.clear()
         return removed
+
+
+class PersistentSkillRepo:
+    def __init__(self, inner: SkillRepo, path: str | Path) -> None:
+        self.inner = inner
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._load()
+
+    def save_skill(self, skill: SkillRecord) -> None:
+        self.inner.save_skill(skill)
+        self._flush()
+
+    def get_skill(self, skill_id: str) -> SkillRecord | None:
+        return self.inner.get_skill(skill_id)
+
+    def list_skills(self, limit: int | None = None) -> list[SkillRecord]:
+        return self.inner.list_skills(limit=limit)
+
+    def search(self, text: str, k: int = 5) -> list[SkillRecord]:
+        return self.inner.search(text, k=k)
+
+    def count(self) -> int:
+        return self.inner.count()
+
+    def clear(self) -> int:
+        removed = self.inner.clear()
+        self._flush()
+        return removed
+
+    def _load(self) -> None:
+        if not self.path.exists():
+            return
+        raw = json.loads(self.path.read_text(encoding="utf-8") or "[]")
+        for item in raw:
+            self.inner.save_skill(SkillRecord.model_validate(item))
+
+    def _flush(self) -> None:
+        data = [item.model_dump(mode="json") for item in self.inner.list_skills()]
+        self.path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+class PersistentFailurePatternRepo:
+    def __init__(self, inner: FailurePatternRepo, path: str | Path) -> None:
+        self.inner = inner
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._load()
+
+    def save_failure_pattern(self, pattern: FailurePatternRecord) -> None:
+        self.inner.save_failure_pattern(pattern)
+        self._flush()
+
+    def get_failure_pattern(self, pattern_id: str) -> FailurePatternRecord | None:
+        return self.inner.get_failure_pattern(pattern_id)
+
+    def list_failure_patterns(self, limit: int | None = None) -> list[FailurePatternRecord]:
+        return self.inner.list_failure_patterns(limit=limit)
+
+    def search(self, text: str, k: int = 5) -> list[FailurePatternRecord]:
+        return self.inner.search(text, k=k)
+
+    def count(self) -> int:
+        return self.inner.count()
+
+    def clear(self) -> int:
+        removed = self.inner.clear()
+        self._flush()
+        return removed
+
+    def _load(self) -> None:
+        if not self.path.exists():
+            return
+        raw = json.loads(self.path.read_text(encoding="utf-8") or "[]")
+        for item in raw:
+            self.inner.save_failure_pattern(FailurePatternRecord.model_validate(item))
+
+    def _flush(self) -> None:
+        data = [item.model_dump(mode="json") for item in self.inner.list_failure_patterns()]
+        self.path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _terms(text: str) -> list[str]:

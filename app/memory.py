@@ -37,6 +37,7 @@ from infra.llm.llm_factory import build_llm
 from infra.repo.decision_repo import DecisionRepo
 from infra.repo.episodic_repo import EpisodicRepo
 from infra.repo.experience_repo import ExperienceRepo
+from infra.repo.cognitive_repo import FailurePatternRepo, SkillRepo
 from infra.repo.vector_repo import VectorStoreRepo
 from app.writeback.memory_policies import ConfidenceConfig, ConfidencePolicy, ConflictPolicy, DedupPolicy, PiiPolicy, ProvenancePolicy, TTLConfig, TTLPolicy
 from app.writeback.service import MemoryRepositoryRouter, WriteBackService
@@ -107,6 +108,8 @@ class OmniMemory:
         episodic_repo: EpisodicRepo | None = None,
         decision_repo: DecisionRepo | None = None,
         experience_repo: ExperienceRepo | None = None,
+        skill_repo: SkillRepo | None = None,
+        failure_pattern_repo: FailurePatternRepo | None = None,
         reject_conflicts: bool = False,
         llm: Any | None = None,
         embedder: IEmbedder | None = None,
@@ -124,6 +127,8 @@ class OmniMemory:
             episodic_repo=episodic_repo,
             decision_repo=decision_repo,
             experience_repo=experience_repo,
+            skill_repo=skill_repo,
+            failure_pattern_repo=failure_pattern_repo,
         )
         self.vector_repo = self.repositories.vector
         self.graph_repo = self.repositories.graph
