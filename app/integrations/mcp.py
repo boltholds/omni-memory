@@ -36,6 +36,28 @@ def _tool(name: str, props: dict[str, Any] | None = None, required: list[str] | 
     return {"name": name, "description": name.replace("_", " "), "inputSchema": _schema(props, required)}
 
 
+def _fact_props() -> dict[str, Any]:
+    return {"subject": {"type": "string"}, "predicate": {"type": "string"}, "object": {"type": "string"}, "source": {"type": "string", "default": "mcp"}, "confidence": {"type": "number", "default": 1.0}}
+
+
+def _skill_props() -> dict[str, Any]:
+    return {"name": {"type": "string"}, "problem": {"type": "string", "default": ""}, "procedure": {"type": "array", "items": {"type": "string"}, "default": []}, "reuse_when": {"type": "array", "items": {"type": "string"}, "default": []}, "avoid_when": {"type": "array", "items": {"type": "string"}, "default": []}, "evidence_ids": {"type": "array", "items": {"type": "string"}, "default": []}, "confidence": {"type": "number", "default": 0.5}, "source": {"type": "string", "default": "mcp"}, "meta": {"type": "object", "default": {}}}
+
+
+def _session_commit_props() -> dict[str, Any]:
+    return {"source": {"type": "string", "default": "mcp-session"}, "dry_run": {"type": "boolean", "default": False}, "min_confidence": {"type": "number", "default": 0.75}, "clear": {"type": "boolean", "default": True}, "meta": {"type": "object", "default": {}}}
+
+
+def _finish_task_props() -> dict[str, Any]:
+    props = _development_cycle_schema_props()
+    props.update({"source": {"type": "string", "default": "mcp-development-workflow"}, "session_turns": {"type": "array", "items": {"type": "object"}, "default": []}, "run_distiller": {"type": "boolean", "default": True}, "distill_dry_run": {"type": "boolean", "default": True}, "min_confidence": {"type": "number", "default": 0.75}, "clear_session": {"type": "boolean", "default": False}})
+    return props
+
+
+def _development_cycle_schema_props() -> dict[str, Any]:
+    return {"goal": {"type": "string"}, "summary": {"type": "string", "default": ""}, "changed_files": {"type": "array", "items": {"type": "string"}, "default": []}, "commands_run": {"type": "array", "items": {"type": "string"}, "default": []}, "tests": {"type": "array", "items": {"type": "string"}, "default": []}, "decisions": {"type": "array", "items": {"type": "string"}, "default": []}, "outcome": {"type": "string", "default": ""}, "lesson": {"type": "string", "default": ""}, "reuse_when": {"type": "array", "items": {"type": "string"}, "default": []}, "avoid_when": {"type": "array", "items": {"type": "string"}, "default": []}, "side_effects": {"type": "array", "items": {"type": "string"}, "default": []}, "confidence": {"type": "number", "default": 0.8}, "meta": {"type": "object", "default": {}}}
+
+
 _NAMES = [
     "omni_memory_write_items", "omni_memory_retrieve", "omni_memory_ask", "omni_memory_context", "omni_memory_detect_conflicts", "omni_memory_mine_facts",
     "omni_memory_write_fact", "omni_memory_list_facts", "omni_memory_get_fact", "omni_memory_patch_fact", "omni_memory_retract_fact", "omni_memory_supersede_fact", "omni_memory_delete_fact",
@@ -54,6 +76,12 @@ _BY_NAME["omni_memory_ask"] = _tool("omni_memory_ask", {"question": {"type": "st
 _BY_NAME["omni_memory_context"] = _tool("omni_memory_context", {"query": {"type": "string", "default": ""}, "intent": {"type": "string"}, "mode": {"type": "string"}, "scope": _scope_schema()})
 _BY_NAME["omni_memory_detect_conflicts"] = _tool("omni_memory_detect_conflicts", {"query": {"type": "string"}, "facts": {"type": "array", "items": {"type": "object"}}, "scope": _scope_schema()})
 _BY_NAME["omni_memory_mine_facts"] = FACT_MINING_TOOL_SCHEMA
+_BY_NAME["omni_memory_write_fact"] = _tool("omni_memory_write_fact", _fact_props(), ["subject", "predicate", "object"])
+_BY_NAME["omni_memory_write_skill"] = _tool("omni_memory_write_skill", _skill_props(), ["name"])
+_BY_NAME["omni_memory_session_commit"] = _tool("omni_memory_session_commit", _session_commit_props())
+_BY_NAME["omni_memory_draft_development_cycle"] = _tool("omni_memory_draft_development_cycle", _development_cycle_schema_props(), ["goal"])
+_BY_NAME["omni_memory_record_development_cycle"] = _tool("omni_memory_record_development_cycle", _development_cycle_schema_props(), ["goal", "lesson"])
+_BY_NAME["omni_memory_finish_development_task"] = _tool("omni_memory_finish_development_task", _finish_task_props(), ["goal", "lesson"])
 MCP_TOOL_SCHEMAS = [_BY_NAME[name] for name in _NAMES]
 
 
@@ -124,16 +152,7 @@ def _development_cycle_payload(kw: dict[str, Any]) -> dict[str, Any]:
 
 def _finish_development_task_payload(kw: dict[str, Any]) -> dict[str, Any]:
     payload = _development_cycle_payload(kw)
-    payload.update(
-        {
-            "source": kw.get("source", "mcp-development-workflow"),
-            "session_turns": kw.get("session_turns") or [],
-            "run_distiller": kw.get("run_distiller", True),
-            "distill_dry_run": kw.get("distill_dry_run", True),
-            "min_confidence": kw.get("min_confidence", 0.75),
-            "clear_session": kw.get("clear_session", False),
-        }
-    )
+    payload.update({"source": kw.get("source", "mcp-development-workflow"), "session_turns": kw.get("session_turns") or [], "run_distiller": kw.get("run_distiller", True), "distill_dry_run": kw.get("distill_dry_run", True), "min_confidence": kw.get("min_confidence", 0.75), "clear_session": kw.get("clear_session", False)})
     return payload
 
 
