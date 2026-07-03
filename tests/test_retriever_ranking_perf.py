@@ -51,6 +51,13 @@ def test_retriever_rank_top_k_keeps_expected_ordering():
     items[0].meta["scope"] = {"domain_ids": ["domain:project:omni-memory"]}
     items[1].meta["scope"] = {"domain_ids": ["domain:project:omni-memory"]}
 
-    ranked = retriever._rank_memory_items(items, {"domain:project:omni-memory": 4.0}, RetrievalScopeFilter(), memory_type="fact", limit=2)
+    ranked = retriever._rank_memory_items(
+        "dependency query",
+        items,
+        {"domain:project:omni-memory": 4.0},
+        RetrievalScopeFilter(),
+        memory_type="fact",
+        limit=2,
+    )
 
     assert [item.id for item in ranked] == ["new", "old"]
