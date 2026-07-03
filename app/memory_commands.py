@@ -169,8 +169,8 @@ class WriteSkillCommand:
     source: str = "user"
     meta: dict[str, Any] | None = None
 
-    def execute(self, context: MemoryCommandContext) -> WriteReport:
-        item = {
+    def to_item(self) -> dict[str, Any]:
+        return {
             "id": f"skill-{uuid.uuid4().hex}",
             "type": "skill",
             "payload": {
@@ -186,6 +186,9 @@ class WriteSkillCommand:
             "provenance": {"source": self.source, "time": time.time(), "meta": {}},
             "meta": self.meta or {},
         }
+
+    def execute(self, context: MemoryCommandContext) -> WriteReport:
+        item = self.to_item()
         return _to_write_report(WriteItemsCommand([item], source=self.source, meta=self.meta).execute(context))
 
 
@@ -201,8 +204,8 @@ class WriteFailurePatternCommand:
     source: str = "user"
     meta: dict[str, Any] | None = None
 
-    def execute(self, context: MemoryCommandContext) -> WriteReport:
-        item = {
+    def to_item(self) -> dict[str, Any]:
+        return {
             "id": f"failure-pattern-{uuid.uuid4().hex}",
             "type": "failure_pattern",
             "payload": {
@@ -217,6 +220,9 @@ class WriteFailurePatternCommand:
             "provenance": {"source": self.source, "time": time.time(), "meta": {}},
             "meta": self.meta or {},
         }
+
+    def execute(self, context: MemoryCommandContext) -> WriteReport:
+        item = self.to_item()
         return _to_write_report(WriteItemsCommand([item], source=self.source, meta=self.meta).execute(context))
 
 

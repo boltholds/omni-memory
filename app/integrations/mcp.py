@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import time
 from typing import Any, Callable
 
-from domain.models import Fact, FailurePatternRecord, Provenance, SkillRecord
-from domain.writeback import stable_id
+from domain.models import Fact, FailurePatternRecord, SkillRecord
 from app.memory import OmniMemory
 
 
@@ -364,44 +362,53 @@ def build_mcp_handlers(memory: OmniMemory) -> dict[str, Callable[..., Any]]:
 
 
 def _write_skill(memory: OmniMemory, **kwargs) -> dict[str, Any]:
-    payload = {
-        "name": kwargs["name"],
-        "problem": kwargs.get("problem", ""),
-        "procedure": kwargs.get("procedure") or [],
-        "reuse_when": kwargs.get("reuse_when") or [],
-        "avoid_when": kwargs.get("avoid_when") or [],
-        "evidence_ids": kwargs.get("evidence_ids") or [],
-        "confidence": kwargs.get("confidence", 0.5),
-    }
-    skill = SkillRecord(
-        id=stable_id("skill", payload),
+    result = memory.write_skill_raw(
+        name=kwargs["name"],
+        problem=kwargs.get("problem", ""),
+        procedure=kwargs.get("procedure") or [],
+        reuse_when=kwargs.get("reuse_when") or [],
+        avoid_when=kwargs.get("avoid_when") or [],
+        evidence_ids=kwargs.get("evidence_ids") or [],
+        confidence=kwargs.get("confidence", 0.5),
         refs=kwargs.get("refs") or {},
-        provenance=Provenance(source=kwargs.get("source", "mcp"), time=time.time()),
+        source=kwargs.get("source", "mcp"),
         meta=kwargs.get("meta") or {},
-        **payload,
     )
-    memory.repositories.skill.save_skill(skill)
-    return {"saved": 1, "skill": skill.model_dump(mode="json")}
+    skill = _saved_object(result.saved, SkillRecord)
+    return {
+        "saved": result.saved_count,
+        "rejected": result.rejected_count + result.error_count,
+        "reasons": result.reasons,
+        "skill": skill.model_dump(mode="json") if skill else None,
+    }
 
 
 def _write_failure_pattern(memory: OmniMemory, **kwargs) -> dict[str, Any]:
-    payload = {
-        "symptom": kwargs["symptom"],
-        "root_cause": kwargs.get("root_cause", ""),
-        "fix": kwargs.get("fix", ""),
-        "detection": kwargs.get("detection", ""),
-        "evidence_ids": kwargs.get("evidence_ids") or [],
-        "confidence": kwargs.get("confidence", 0.5),
-    }
-    pattern = FailurePatternRecord(
-        id=stable_id("failure_pattern", payload),
+    result = memory.write_failure_pattern_raw(
+        symptom=kwargs["symptom"],
+        root_cause=kwargs.get("root_cause", ""),
+        fix=kwargs.get("fix", ""),
+        detection=kwargs.get("detection", ""),
+        evidence_ids=kwargs.get("evidence_ids") or [],
+        confidence=kwargs.get("confidence", 0.5),
         refs=kwargs.get("refs") or {},
-        provenance=Provenance(source=kwargs.get("source", "mcp"), time=time.time()),
+        source=kwargs.get("source", "mcp"),
         meta=kwargs.get("meta") or {},
-        **payload,
     )
-    memory.repositories.failure_pattern.save_failure_pattern(pattern)
-    return {"saved": 1, "failure_pattern": pattern.model_dump(mode="json")}
+    pattern = _saved_object(result.saved, FailurePatternRecord)
+    return {
+        "saved": result.saved_count,
+        "rejected": result.rejected_count + result.error_count,
+        "reasons": result.reasons,
+        "failure_pattern": pattern.model_dump(mode="json") if pattern else None,
+    }
+
+
+def _saved_object(saved: list[Any], expected_type: type) -> Any | None:
+    for item in saved:
+        if isinstance(item, expected_type):
+            return item
+    return None
 
 
 def _session_ingest_turn(memory: OmniMemory, *, role: str, content: str) -> dict[str, Any]:

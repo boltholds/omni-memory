@@ -16,10 +16,12 @@ from app.memory_commands import (
     MemoryCommandInterpreter,
     RecordAgentCycleCommand,
     RecordExperienceCommand,
+    WriteFailurePatternCommand,
     WriteDecisionCommand,
     WriteFactCommand,
     WriteItemsCommand,
     WriteNoteCommand,
+    WriteSkillCommand,
 )
 from app.memory_repositories import MemoryClearCommand, MemoryClearReport, MemoryRepositories, build_memory_repositories
 from domain.distiller import IMemoryDistiller, SessionTurn
@@ -179,6 +181,20 @@ class OmniMemory:
 
     def record_experience(self, *, goal: str, lesson: str, context: str = "", decision: str = "", actions: list[str] | None = None, outcome: str = "", evaluation: dict[str, Any] | None = None, reuse_when: list[str] | None = None, avoid_when: list[str] | None = None, confidence: float = 0.5, refs: dict[str, Any] | None = None, source: str = "user", meta: dict[str, Any] | None = None) -> WriteReport:
         return self.command_interpreter.execute(RecordExperienceCommand(goal=goal, lesson=lesson, context=context, decision=decision, actions=actions, outcome=outcome, evaluation=evaluation, reuse_when=reuse_when, avoid_when=avoid_when, confidence=confidence, refs=refs, source=source, meta=meta))
+
+    def write_skill(self, *, name: str, problem: str = "", procedure: list[str] | None = None, reuse_when: list[str] | None = None, avoid_when: list[str] | None = None, evidence_ids: list[str] | None = None, confidence: float = 0.5, refs: dict[str, Any] | None = None, source: str = "user", meta: dict[str, Any] | None = None) -> WriteReport:
+        result = self.write_skill_raw(name=name, problem=problem, procedure=procedure, reuse_when=reuse_when, avoid_when=avoid_when, evidence_ids=evidence_ids, confidence=confidence, refs=refs, source=source, meta=meta)
+        return self._to_write_report(result)
+
+    def write_skill_raw(self, *, name: str, problem: str = "", procedure: list[str] | None = None, reuse_when: list[str] | None = None, avoid_when: list[str] | None = None, evidence_ids: list[str] | None = None, confidence: float = 0.5, refs: dict[str, Any] | None = None, source: str = "user", meta: dict[str, Any] | None = None) -> WritebackResult:
+        return self.command_interpreter.execute(WriteItemsCommand(items=[WriteSkillCommand(name=name, problem=problem, procedure=procedure, reuse_when=reuse_when, avoid_when=avoid_when, evidence_ids=evidence_ids, confidence=confidence, refs=refs, source=source, meta=meta).to_item()], source=source, meta=meta))
+
+    def write_failure_pattern(self, *, symptom: str, root_cause: str = "", fix: str = "", detection: str = "", evidence_ids: list[str] | None = None, confidence: float = 0.5, refs: dict[str, Any] | None = None, source: str = "user", meta: dict[str, Any] | None = None) -> WriteReport:
+        result = self.write_failure_pattern_raw(symptom=symptom, root_cause=root_cause, fix=fix, detection=detection, evidence_ids=evidence_ids, confidence=confidence, refs=refs, source=source, meta=meta)
+        return self._to_write_report(result)
+
+    def write_failure_pattern_raw(self, *, symptom: str, root_cause: str = "", fix: str = "", detection: str = "", evidence_ids: list[str] | None = None, confidence: float = 0.5, refs: dict[str, Any] | None = None, source: str = "user", meta: dict[str, Any] | None = None) -> WritebackResult:
+        return self.command_interpreter.execute(WriteItemsCommand(items=[WriteFailurePatternCommand(symptom=symptom, root_cause=root_cause, fix=fix, detection=detection, evidence_ids=evidence_ids, confidence=confidence, refs=refs, source=source, meta=meta).to_item()], source=source, meta=meta))
 
     def list_experiences(self, *, limit: int | None = None) -> list[ExperienceRecord]:
         return self.experience_repo.list_experiences(limit=limit)

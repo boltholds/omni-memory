@@ -74,6 +74,33 @@ def test_failure_pattern_memory_write_list_get_and_search():
     assert searched["failure_patterns"][0]["id"] == pattern_id
 
 
+def test_cognitive_memory_writes_go_through_writeback_policies():
+    handlers = build_mcp_handlers(_memory())
+
+    skill = handlers["omni_memory_write_skill"](
+        name="Contact maintainer at root@example.com",
+        confidence=0.9,
+        source="test",
+    )
+    pattern = handlers["omni_memory_write_failure_pattern"](
+        symptom="Failure includes token=abcdabcdabcdabcd",
+        confidence=0.9,
+        source="test",
+    )
+
+    assert skill["saved"] == 0
+    assert skill["skill"] is None
+    assert any("pii_email_blocked" in reason for reason in skill["reasons"])
+
+    assert pattern["saved"] == 0
+    assert pattern["failure_pattern"] is None
+    assert any("pii_secret_blocked" in reason for reason in pattern["reasons"])
+
+    stats = handlers["omni_memory_stats"]()
+    assert stats["skills"] == 0
+    assert stats["failure_patterns"] == 0
+
+
 def test_stats_and_clear_include_cognitive_memory_repos():
     memory = _memory()
     handlers = build_mcp_handlers(memory)
