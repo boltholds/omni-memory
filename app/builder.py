@@ -3,6 +3,7 @@ from __future__ import annotations
 from domain.llm import ILLMProvider
 from domain.model_ports import IEmbedder, ModelBundle
 from domain.repositories import IFactRepo, IVectorRepo
+from app.fact_mining import FactExtractor
 from app.memory import OmniMemory
 
 from infra.repo.episodic_repo import EpisodicRepo
@@ -25,6 +26,7 @@ def build_memory(
     experience_repo: ExperienceRepo | None = None,
     skill_repo: SkillRepo | None = None,
     failure_pattern_repo: FailurePatternRepo | None = None,
+    fact_extractor: FactExtractor | None = None,
 ) -> OmniMemory:
     """Build the central OmniMemory facade used by CLI, FastAPI and examples.
 
@@ -53,6 +55,5 @@ def build_memory(
         experience_repo=experience_repo,
         skill_repo=skill_repo,
         failure_pattern_repo=failure_pattern_repo,
+        fact_extractor=fact_extractor,
     )
-    
-    
