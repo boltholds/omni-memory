@@ -9,7 +9,15 @@ poetry install
 poetry run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Optional SQL persistence for memory audit/governance is documented in `docs/memory_persistence.md`.
+## Docs
+
+```text
+docs/architecture.md          architecture and stable/experimental boundaries
+docs/demo_end_to_end.md       full product demo scenario
+docs/memory_persistence.md    optional SQL audit persistence setup
+docs/release_checklist.md     pre-merge and release checklist
+docs/stability.md             module stability policy
+```
 
 ## Why OmniMemory is not just RAG
 
@@ -33,7 +41,7 @@ The important differences are:
 - **Policy-first lifecycle.** Provenance, TTL, PII blocking, conflict checks, confidence checks and deduplication run before persistence.
 - **Current beliefs.** Multiple historical facts can exist, while the context builder can expose the current best belief and preserve alternatives.
 - **Conflict visibility.** Conflicting facts are surfaced instead of being left as unrelated chunks.
-- **Multi-hop graph retrieval.** Graph facts can be expanded beyond directly mentioned entities.
+- **Intent-aware retrieval.** The memory planner can retrieve different memory channels for answering, planning, decisions, debugging and coding.
 - **Inspectable context.** The API can return both the final context and the retrieval bundle used to build it.
 
 This makes OmniMemory closer to a transparent long-term memory subsystem than to a document search layer.
@@ -99,20 +107,31 @@ If `project.backend_framework = FastAPI` already exists, this rejects the incomi
 ```bash
 curl -X POST http://127.0.0.1:8000/v1/memories/search \
   -H "Content-Type: application/json" \
-  -d '{"q": "What backend framework does project use?"}'
+  -d '{"q": "What backend framework does project use?", "intent": "answer_question"}'
 ```
 
-This returns the raw retrieval bundle: semantic chunks, facts, current beliefs, episodes and citations.
+This returns the raw retrieval bundle: semantic chunks, facts, current beliefs, episodes, decisions, experiences and citations.
 
 ### Build context
 
 ```bash
 curl -X POST http://127.0.0.1:8000/v1/context \
   -H "Content-Type: application/json" \
-  -d '{"q": "What backend framework does project use?", "max_tokens": 1200}'
+  -d '{"q": "What backend framework does project use?", "intent": "answer_question", "max_tokens": 1200}'
 ```
 
 This returns the structured context pack and the retrieval bundle used to build it.
+
+### Inspect persistent audit records
+
+When SQL audit persistence is enabled:
+
+```bash
+curl http://127.0.0.1:8000/v1/memories
+curl http://127.0.0.1:8000/v1/audit/operations
+curl http://127.0.0.1:8000/v1/audit/decisions
+curl http://127.0.0.1:8000/v1/audit/reviews
+```
 
 ## How to inspect why a memory was written
 
