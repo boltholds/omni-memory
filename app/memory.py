@@ -25,6 +25,8 @@ from app.memory_commands import (
     WriteSkillCommand,
 )
 from app.memory_repositories import MemoryClearCommand, MemoryClearReport, MemoryRepositories, build_memory_repositories
+from app.ops_cycle import OpsCycleDraft
+from app.ops_memory_workflow import OpsMemoryWorkflow
 from domain.distiller import ISessionMemoryDistiller, SessionTurn
 from domain.experience_evaluator import ExperienceEvaluator
 from domain.models import ContextPack, ConflictReport, DecisionRecord, ExperienceRecord, RetrievalBundle, WriteReport
@@ -166,6 +168,7 @@ class OmniMemory:
         )
         self.development_cycle_recorder = DevelopmentCycleRecorder()
         self.development_memory_workflow = DevelopmentMemoryWorkflow(self)
+        self.ops_memory_workflow = OpsMemoryWorkflow(self)
         self.writeback_service = build_writeback_service(repositories=self.repositories, reject_conflicts=reject_conflicts)
         self._session_turns: list[SessionTurn] = []
         self.prompt_renderer = PromptRenderer()
@@ -260,6 +263,12 @@ class OmniMemory:
     def record_development_cycle(self, cycle: DevelopmentCycleDraft | dict[str, Any], *, source: str = "development-cycle") -> WriteReport:
         draft = self.draft_development_cycle(cycle)
         return self.record_agent_cycle(draft, source=source)
+
+    def draft_ops_cycle(self, cycle: OpsCycleDraft | dict[str, Any]) -> AgentCycleRecord:
+        return self.ops_memory_workflow.draft_cycle(cycle)
+
+    def record_ops_cycle(self, cycle: OpsCycleDraft | dict[str, Any], *, source: str = "ops-workflow") -> WriteReport:
+        return self.ops_memory_workflow.record_cycle(cycle, source=source)
 
     def consolidate_experiences(self, *, dry_run: bool = True, min_confidence: float = 0.85) -> ConsolidationResult:
         return self.consolidator.consolidate(dry_run=dry_run, min_confidence=min_confidence)
