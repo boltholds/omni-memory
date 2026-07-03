@@ -82,3 +82,15 @@ def test_writeback_result_contains_operations_and_policy_decisions():
     assert result.policy_decisions
     assert any(decision.stage == "conversion" for decision in result.policy_decisions)
     assert any(decision.stage == "repository" for decision in result.policy_decisions)
+
+
+def test_omnimemory_facade_writes_directly_without_command_interpreter_layer():
+    memory = _memory()
+
+    assert not hasattr(memory, "command_interpreter")
+
+    report = memory.write_fact("OmniMemory", "uses", "direct WriteBackService", source="codex-dev")
+
+    assert report.saved == 1
+    assert report.rejected == 0
+    assert memory.repository_stats()["facts"] == 1
