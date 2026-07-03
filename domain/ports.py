@@ -1,6 +1,6 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
-from typing import List
+from typing import Any, List
 from .models import (
     ContextPack,
     ConflictReport,
@@ -87,6 +87,7 @@ class IRetriever(ABC):
         k_eps: int = 3,
         intent: str | None = None,
         mode: str | None = None,
+        scope: dict[str, Any] | None = None,
     ) -> RetrievalBundle: ...
 
 class IMemoryOrchestrator(ABC):
@@ -96,6 +97,7 @@ class IMemoryOrchestrator(ABC):
         query: str,
         intent: str | None = None,
         mode: str | None = None,
+        scope: dict[str, Any] | None = None,
     ) -> RetrievalBundle: ...
     @abstractmethod
     def assemble_context(
