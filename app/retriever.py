@@ -9,6 +9,7 @@ from app.entities import build_entity_stack
 from app.memory_planner import MemoryPlanner
 from app.profiling import timed
 from app.stats import stats
+from domain.model_ports import IReranker
 from domain.models import DecisionRecord, Episode, ExperienceRecord, Fact, MemoryObject, RetrievalBundle, SkillRecord
 from domain.models import FailurePatternRecord as PatternRecord
 from domain.ports import IDecisionRepository, IEpisodicRepository, IExperienceRepository, IGraphRepository, IMemoryReadRepository, IRetriever, ISkillRepository
@@ -17,6 +18,8 @@ from infra.consistency import build_fact_beliefs
 
 _MAX_GRAPH_FRONTIER = 64
 _MAX_GRAPH_FACTS = 512
+_RERANK_POOL_MULTIPLIER = 4
+_RERANK_POOL_MIN = 16
 
 
 @dataclass(frozen=True)
@@ -106,6 +109,7 @@ class Retriever(IRetriever):
         skill_repo: ISkillRepository | None = None,
         pattern_repo: PatternRepository | None = None,
         domain_graph_repo: Any | None = None,
+        reranker: IReranker | None = None,
     ) -> None:
         self._vector = vector_repo
         self._graph = graph_repo
@@ -115,6 +119,7 @@ class Retriever(IRetriever):
         self._skills = skill_repo
         self._patterns = pattern_repo
         self._domain_graph = domain_graph_repo
+        self._reranker = reranker
         self._extractor, self._linker = build_entity_stack(settings.ner_backend, settings.entity_aliases)
         self._planner = MemoryPlanner()
 
@@ -175,6 +180,7 @@ class Retriever(IRetriever):
         if profile.semantic and _memory_type_allowed("note", scope_filter):
             stop_vec = stats.timeit("retriever.vec_ms")
             semantic_chunks = self._rank_memory_items(
+                query,
                 self._vector.semantic_search(query, k=max(k_sem * 3, k_sem)),
                 domain_weights,
                 scope_filter,
@@ -187,6 +193,7 @@ class Retriever(IRetriever):
         if profile.facts and _memory_type_allowed("fact", scope_filter):
             stop_kg = stats.timeit("retriever.kg_ms")
             facts = self._rank_memory_items(
+                query,
                 self._expand_graph_two_hop(ents),
                 domain_weights,
                 scope_filter,
@@ -198,6 +205,7 @@ class Retriever(IRetriever):
         if profile.episodes and _memory_type_allowed("episode", scope_filter):
             stop_ep = stats.timeit("retriever.ep_ms")
             episodes = self._rank_memory_items(
+                query,
                 self._episodic.search(user=None, entities=ents, k=max(k_eps * 3, k_eps)),
                 domain_weights,
                 scope_filter,
@@ -209,6 +217,7 @@ class Retriever(IRetriever):
         decisions: List[DecisionRecord] = []
         if profile.decisions and self._decisions is not None and _memory_type_allowed("decision", scope_filter):
             decisions = self._rank_memory_items(
+                query,
                 self._decisions.search(query, k=max(k_eps * 3, k_eps)),
                 domain_weights,
                 scope_filter,
@@ -219,6 +228,7 @@ class Retriever(IRetriever):
         experiences: List[ExperienceRecord] = []
         if profile.experiences and self._experiences is not None and _memory_type_allowed("experience", scope_filter):
             experiences = self._rank_memory_items(
+                query,
                 self._experiences.search(query, k=max(k_eps * 3, k_eps)),
                 domain_weights,
                 scope_filter,
@@ -229,6 +239,7 @@ class Retriever(IRetriever):
         skills: List[SkillRecord] = []
         if profile.skills and self._skills is not None and _memory_type_allowed("skill", scope_filter):
             skills = self._rank_memory_items(
+                query,
                 self._skills.search(query, k=max(k_eps * 3, k_eps)),
                 domain_weights,
                 scope_filter,
@@ -239,6 +250,7 @@ class Retriever(IRetriever):
         patterns: List[PatternRecord] = []
         if profile.failure_patterns and self._patterns is not None and _memory_type_allowed("failure_pattern", scope_filter):
             patterns = self._rank_memory_items(
+                query,
                 self._patterns.search(query, k=max(k_eps * 3, k_eps)),
                 domain_weights,
                 scope_filter,
@@ -261,6 +273,7 @@ class Retriever(IRetriever):
 
     def _rank_memory_items(
         self,
+        query: str,
         items: list[Any],
         domain_weights: dict[str, float],
         scope_filter: RetrievalScopeFilter,
@@ -274,11 +287,59 @@ class Retriever(IRetriever):
                 continue
             scored.append(((_memory_score(item, domain_weights), _memory_time(item), -idx), item))
 
+        if not scored:
+            return []
+
+        pre_ranked = _top_scored_items(scored, limit=_rerank_pool_size(limit))
+        reranked = self._rerank(query, pre_ranked)
         if limit is not None:
-            if limit <= 0:
-                return []
-            return [item for _, item in heapq.nlargest(limit, scored, key=lambda pair: pair[0])]
-        return [item for _, item in sorted(scored, key=lambda pair: pair[0], reverse=True)]
+            return reranked[: max(limit, 0)]
+        return reranked
+
+    def _rerank(self, query: str, items: list[Any]) -> list[Any]:
+        if self._reranker is None or len(items) <= 1:
+            return items
+        try:
+            reranked = list(self._reranker.rerank(query, items))
+        except Exception:
+            return items
+        return _valid_reranked_items(reranked, items)
+
+
+def _top_scored_items(scored: list[tuple[tuple[float, float, int], Any]], *, limit: int | None) -> list[Any]:
+    if limit is not None:
+        if limit <= 0:
+            return []
+        pairs = heapq.nlargest(limit, scored, key=lambda pair: pair[0])
+    else:
+        pairs = sorted(scored, key=lambda pair: pair[0], reverse=True)
+    return [item for _, item in pairs]
+
+
+def _rerank_pool_size(limit: int | None) -> int | None:
+    if limit is None:
+        return None
+    return max(limit, min(_RERANK_POOL_MIN, max(limit, 1) * _RERANK_POOL_MULTIPLIER))
+
+
+def _valid_reranked_items(reranked: list[Any], original: list[Any]) -> list[Any]:
+    original_by_identity = {id(item): item for item in original}
+    seen: set[int] = set()
+    out: list[Any] = []
+    for item in reranked:
+        original_item = original_by_identity.get(id(item))
+        if original_item is None:
+            continue
+        identity = id(original_item)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        out.append(original_item)
+    for item in original:
+        identity = id(item)
+        if identity not in seen:
+            out.append(item)
+    return out
 
 
 def _domain_weights(query: str, domain_graph: Any | None, scope_filter: RetrievalScopeFilter) -> dict[str, float]:
