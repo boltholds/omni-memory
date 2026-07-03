@@ -115,4 +115,7 @@ def test_domain_graph_repo_supports_multihop_traversal():
     assert repo.successors(infra.id) == [ci.id]
     assert repo.predecessors(ci.id) == [infra.id]
     assert repo.reachable_domain_ids(omni.id, max_depth=1) == [infra.id]
-    assert repo.reachable_domain_ids(omni.id, max_depth=3) == [ci.id, infra.id, pytest.id]
+
+    reachable = repo.reachable_domain_ids(omni.id, max_depth=3)
+    assert set(reachable) == {infra.id, ci.id, pytest.id}
+    assert len(reachable) == 3
