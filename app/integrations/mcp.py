@@ -48,14 +48,18 @@ def _session_commit_props() -> dict[str, Any]:
     return {"source": {"type": "string", "default": "mcp-session"}, "dry_run": {"type": "boolean", "default": False}, "min_confidence": {"type": "number", "default": 0.75}, "clear": {"type": "boolean", "default": True}, "meta": {"type": "object", "default": {}}}
 
 
+def _development_cycle_schema_props() -> dict[str, Any]:
+    return {"goal": {"type": "string"}, "summary": {"type": "string", "default": ""}, "changed_files": {"type": "array", "items": {"type": "string"}, "default": []}, "commands_run": {"type": "array", "items": {"type": "string"}, "default": []}, "tests": {"type": "array", "items": {"type": "string"}, "default": []}, "decisions": {"type": "array", "items": {"type": "string"}, "default": []}, "outcome": {"type": "string", "default": ""}, "lesson": {"type": "string", "default": ""}, "reuse_when": {"type": "array", "items": {"type": "string"}, "default": []}, "avoid_when": {"type": "array", "items": {"type": "string"}, "default": []}, "side_effects": {"type": "array", "items": {"type": "string"}, "default": []}, "confidence": {"type": "number", "default": 0.8}, "meta": {"type": "object", "default": {}}}
+
+
 def _finish_task_props() -> dict[str, Any]:
     props = _development_cycle_schema_props()
     props.update({"source": {"type": "string", "default": "mcp-development-workflow"}, "session_turns": {"type": "array", "items": {"type": "object"}, "default": []}, "run_distiller": {"type": "boolean", "default": True}, "distill_dry_run": {"type": "boolean", "default": True}, "min_confidence": {"type": "number", "default": 0.75}, "clear_session": {"type": "boolean", "default": False}})
     return props
 
 
-def _development_cycle_schema_props() -> dict[str, Any]:
-    return {"goal": {"type": "string"}, "summary": {"type": "string", "default": ""}, "changed_files": {"type": "array", "items": {"type": "string"}, "default": []}, "commands_run": {"type": "array", "items": {"type": "string"}, "default": []}, "tests": {"type": "array", "items": {"type": "string"}, "default": []}, "decisions": {"type": "array", "items": {"type": "string"}, "default": []}, "outcome": {"type": "string", "default": ""}, "lesson": {"type": "string", "default": ""}, "reuse_when": {"type": "array", "items": {"type": "string"}, "default": []}, "avoid_when": {"type": "array", "items": {"type": "string"}, "default": []}, "side_effects": {"type": "array", "items": {"type": "string"}, "default": []}, "confidence": {"type": "number", "default": 0.8}, "meta": {"type": "object", "default": {}}}
+def _ops_cycle_schema_props() -> dict[str, Any]:
+    return {"goal": {"type": "string"}, "service": {"type": "string"}, "alert_id": {"type": "string"}, "symptoms": {"type": "array", "items": {"type": "string"}, "default": []}, "actions": {"type": "array", "items": {"type": "string"}, "default": []}, "outcome": {"type": "string", "default": ""}, "metrics_before": {"type": "object", "default": {}}, "metrics_after": {"type": "object", "default": {}}, "lesson": {"type": "string", "default": ""}, "reuse_when": {"type": "array", "items": {"type": "string"}, "default": []}, "avoid_when": {"type": "array", "items": {"type": "string"}, "default": []}, "affected_resources": {"type": "array", "items": {"type": "string"}, "default": []}, "confidence": {"type": "number", "default": 0.8}, "source": {"type": "string", "default": "mcp-ops-cycle"}, "meta": {"type": "object", "default": {}}}
 
 
 _NAMES = [
@@ -66,6 +70,7 @@ _NAMES = [
     "omni_memory_write_skill", "omni_memory_list_skills", "omni_memory_get_skill", "omni_memory_search_skills",
     "omni_memory_write_failure_pattern", "omni_memory_list_failure_patterns", "omni_memory_get_failure_pattern", "omni_memory_search_failure_patterns",
     "omni_memory_consolidate_experiences", "omni_memory_record_agent_cycle", "omni_memory_draft_development_cycle", "omni_memory_record_development_cycle", "omni_memory_finish_development_task",
+    "omni_memory_draft_ops_cycle", "omni_memory_record_ops_cycle",
     "omni_memory_session_ingest_turn", "omni_memory_session_commit", "omni_memory_session_clear", "omni_memory_clear", "omni_memory_stats",
 ]
 
@@ -82,6 +87,8 @@ _BY_NAME["omni_memory_session_commit"] = _tool("omni_memory_session_commit", _se
 _BY_NAME["omni_memory_draft_development_cycle"] = _tool("omni_memory_draft_development_cycle", _development_cycle_schema_props(), ["goal"])
 _BY_NAME["omni_memory_record_development_cycle"] = _tool("omni_memory_record_development_cycle", _development_cycle_schema_props(), ["goal", "lesson"])
 _BY_NAME["omni_memory_finish_development_task"] = _tool("omni_memory_finish_development_task", _finish_task_props(), ["goal", "lesson"])
+_BY_NAME["omni_memory_draft_ops_cycle"] = _tool("omni_memory_draft_ops_cycle", _ops_cycle_schema_props(), ["goal", "service"])
+_BY_NAME["omni_memory_record_ops_cycle"] = _tool("omni_memory_record_ops_cycle", _ops_cycle_schema_props(), ["goal", "service", "lesson"])
 MCP_TOOL_SCHEMAS = [_BY_NAME[name] for name in _NAMES]
 
 
@@ -126,6 +133,8 @@ def build_mcp_handlers(memory: OmniMemory) -> dict[str, Callable[..., Any]]:
         "omni_memory_draft_development_cycle": lambda **kw: memory.draft_development_cycle(_development_cycle_payload(kw)).model_dump(mode="json"),
         "omni_memory_record_development_cycle": lambda **kw: memory.record_development_cycle(_development_cycle_payload(kw), source=kw.get("source", "mcp-development-cycle")).model_dump(),
         "omni_memory_finish_development_task": lambda **kw: memory.development_memory_workflow.finish_task(_finish_development_task_payload(kw)).model_dump(mode="json"),
+        "omni_memory_draft_ops_cycle": lambda **kw: memory.draft_ops_cycle(_ops_cycle_payload(kw)).model_dump(mode="json"),
+        "omni_memory_record_ops_cycle": lambda **kw: memory.record_ops_cycle(_ops_cycle_payload(kw), source=kw.get("source", "mcp-ops-cycle")).model_dump(),
         "omni_memory_session_ingest_turn": lambda **kw: _session_ingest_turn(memory, role=kw["role"], content=kw["content"]),
         "omni_memory_session_commit": lambda **kw: memory.commit_session(source=kw.get("source", "mcp-session"), dry_run=kw.get("dry_run", False), meta=kw.get("meta") or {}, min_confidence=kw.get("min_confidence", 0.75), clear=kw.get("clear", True)).model_dump(),
         "omni_memory_session_clear": lambda **kw: _session_clear(memory),
@@ -154,6 +163,10 @@ def _finish_development_task_payload(kw: dict[str, Any]) -> dict[str, Any]:
     payload = _development_cycle_payload(kw)
     payload.update({"source": kw.get("source", "mcp-development-workflow"), "session_turns": kw.get("session_turns") or [], "run_distiller": kw.get("run_distiller", True), "distill_dry_run": kw.get("distill_dry_run", True), "min_confidence": kw.get("min_confidence", 0.75), "clear_session": kw.get("clear_session", False)})
     return payload
+
+
+def _ops_cycle_payload(kw: dict[str, Any]) -> dict[str, Any]:
+    return {"goal": kw["goal"], "service": kw["service"], "alert_id": kw.get("alert_id"), "symptoms": kw.get("symptoms") or [], "actions": kw.get("actions") or [], "outcome": kw.get("outcome", ""), "metrics_before": kw.get("metrics_before") or {}, "metrics_after": kw.get("metrics_after") or {}, "lesson": kw.get("lesson", ""), "reuse_when": kw.get("reuse_when") or [], "avoid_when": kw.get("avoid_when") or [], "affected_resources": kw.get("affected_resources") or [], "confidence": kw.get("confidence", 0.8), "meta": kw.get("meta") or {}}
 
 
 def _session_ingest_turn(memory: OmniMemory, *, role: str, content: str) -> dict[str, Any]:
