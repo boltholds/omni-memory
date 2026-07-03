@@ -20,6 +20,8 @@ _MAX_GRAPH_FRONTIER = 64
 _MAX_GRAPH_FACTS = 512
 _RERANK_POOL_MULTIPLIER = 4
 _RERANK_POOL_MIN = 16
+_MIN_RETRIEVAL_SCORE = -2.5
+_UNSCOPED_DURABLE_PENALTY = 1.25
 
 
 @dataclass(frozen=True)
@@ -285,13 +287,17 @@ class Retriever(IRetriever):
         for idx, item in enumerate(items):
             if not _passes_scope_filter(item, memory_type=memory_type, scope_filter=scope_filter):
                 continue
-            scored.append(((_memory_score(item, domain_weights), _memory_time(item), -idx), item))
+            score = _memory_score(item, domain_weights, scope_filter=scope_filter)
+            if score < _retrieval_score_threshold(memory_type):
+                continue
+            scored.append(((score, _memory_time(item), -idx), item))
 
         if not scored:
             return []
 
-        pre_ranked = _top_scored_items(scored, limit=_rerank_pool_size(limit))
-        reranked = self._rerank(query, pre_ranked)
+        deduped = _deduplicate_scored_items(scored, memory_type=memory_type)
+        pre_ranked = _top_scored_items(deduped, limit=_rerank_pool_size(limit))
+        reranked = _deduplicate_items(self._rerank(query, pre_ranked), memory_type=memory_type)
         if limit is not None:
             return reranked[: max(limit, 0)]
         return reranked
@@ -304,6 +310,62 @@ class Retriever(IRetriever):
         except Exception:
             return items
         return _valid_reranked_items(reranked, items)
+
+
+def _deduplicate_scored_items(scored: list[tuple[tuple[float, float, int], Any]], *, memory_type: str) -> list[tuple[tuple[float, float, int], Any]]:
+    out: list[tuple[tuple[float, float, int], Any]] = []
+    seen: set[str] = set()
+    for score, item in sorted(scored, key=lambda pair: pair[0], reverse=True):
+        keys = _dedup_keys(item, memory_type=memory_type)
+        if keys and seen.intersection(keys):
+            continue
+        seen.update(keys)
+        out.append((score, item))
+    return out
+
+
+def _deduplicate_items(items: list[Any], *, memory_type: str) -> list[Any]:
+    out: list[Any] = []
+    seen: set[str] = set()
+    for item in items:
+        keys = _dedup_keys(item, memory_type=memory_type)
+        if keys and seen.intersection(keys):
+            continue
+        seen.update(keys)
+        out.append(item)
+    return out
+
+
+def _dedup_keys(item: Any, *, memory_type: str) -> set[str]:
+    keys: set[str] = set()
+    item_id = str(getattr(item, "id", "") or "").strip()
+    if item_id:
+        keys.add(f"{memory_type}:id:{item_id}")
+    fingerprint = _content_fingerprint(item, memory_type=memory_type)
+    if fingerprint:
+        keys.add(f"{memory_type}:content:{fingerprint}")
+    return keys
+
+
+def _content_fingerprint(item: Any, *, memory_type: str) -> str:
+    if isinstance(item, MemoryObject):
+        payload = item.payload or {}
+        text = payload.get("text") or payload.get("content") or str(payload)
+    elif isinstance(item, Fact):
+        text = f"{item.subject} {item.predicate} {item.object}"
+    elif isinstance(item, Episode):
+        text = " ".join([item.summary, *[event.summary for event in item.events]])
+    elif isinstance(item, DecisionRecord):
+        text = " ".join([item.title, item.context, item.decision, " ".join(item.consequences)])
+    elif isinstance(item, ExperienceRecord):
+        text = " ".join([item.goal, item.context, item.decision, " ".join(item.actions), item.outcome, item.lesson, " ".join(item.reuse_when)])
+    elif isinstance(item, SkillRecord):
+        text = " ".join([item.name, item.problem, " ".join(item.procedure), " ".join(item.reuse_when)])
+    elif isinstance(item, PatternRecord):
+        text = " ".join([item.symptom, item.root_cause, item.fix, item.detection])
+    else:
+        text = str(item)
+    return _normalize_text(text)
 
 
 def _top_scored_items(scored: list[tuple[tuple[float, float, int], Any]], *, limit: int | None) -> list[Any]:
@@ -377,16 +439,19 @@ def _domain_label_matches(normalized_query: str, label: str) -> bool:
     return any(_normalize_text(candidate) in normalized_query for candidate in candidates if candidate)
 
 
-def _memory_score(item: Any, domain_weights: dict[str, float]) -> float:
+def _memory_score(item: Any, domain_weights: dict[str, float], *, scope_filter: RetrievalScopeFilter) -> float:
     score = 0.0
     scope = _scope(item)
-    for domain_id in _scope_domain_ids(scope):
+    item_domain_ids = _item_domain_ids(item)
+    for domain_id in item_domain_ids:
         score += domain_weights.get(domain_id, 0.0)
 
     environment = str(scope.get("environment") or "").lower()
     durability = str(scope.get("durability") or "").lower()
     excluded = bool(scope.get("exclude_from_consolidation") or _meta(item).get("exclude_from_consolidation"))
 
+    if (domain_weights or scope_filter.domain_ids) and durability == "durable" and not item_domain_ids:
+        score -= _UNSCOPED_DURABLE_PENALTY
     if environment in {"test", "benchmark", "sandbox"}:
         score -= 2.0
     if durability in {"ephemeral", "session"}:
@@ -394,6 +459,10 @@ def _memory_score(item: Any, domain_weights: dict[str, float]) -> float:
     if excluded:
         score -= 1.0
     return score
+
+
+def _retrieval_score_threshold(memory_type: str) -> float:
+    return _MIN_RETRIEVAL_SCORE
 
 
 def _passes_scope_filter(item: Any, *, memory_type: str, scope_filter: RetrievalScopeFilter) -> bool:
@@ -411,7 +480,7 @@ def _passes_scope_filter(item: Any, *, memory_type: str, scope_filter: Retrieval
     if not scope_filter.include_ephemeral and durability in {"ephemeral", "session"}:
         return False
     if scope_filter.strict_domains and scope_filter.domain_ids:
-        item_domains = set(_scope_domain_ids(scope))
+        item_domains = set(_item_domain_ids(item))
         if not item_domains.intersection(scope_filter.domain_ids):
             return False
     return True
@@ -443,6 +512,21 @@ def _scope(item: Any) -> dict[str, Any]:
 def _meta(item: Any) -> dict[str, Any]:
     meta = getattr(item, "meta", {}) or {}
     return dict(meta) if isinstance(meta, dict) else {}
+
+
+def _item_domain_ids(item: Any) -> list[str]:
+    meta = _meta(item)
+    raw: list[Any] = []
+    raw.extend(_scope_domain_ids(_scope(item)))
+    for key in ("domain_ids", "domains"):
+        value = meta.get(key)
+        if isinstance(value, str):
+            raw.append(value)
+        elif value:
+            raw.extend(list(value))
+    if meta.get("domain"):
+        raw.append(str(meta["domain"]))
+    return _bounded_unique([str(value) for value in raw], limit=32)
 
 
 def _scope_domain_ids(scope: dict[str, Any]) -> list[str]:
