@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import heapq
 from dataclasses import dataclass, field
 from typing import Any, List, Set
 
@@ -13,6 +14,9 @@ from domain.models import FailurePatternRecord as PatternRecord
 from domain.ports import IDecisionRepository, IEpisodicRepository, IExperienceRepository, IGraphRepository, IMemoryReadRepository, IRetriever, ISkillRepository
 from domain.ports import IFailurePatternRepository as PatternRepository
 from infra.consistency import build_fact_beliefs
+
+_MAX_GRAPH_FRONTIER = 64
+_MAX_GRAPH_FACTS = 512
 
 
 @dataclass(frozen=True)
@@ -114,38 +118,40 @@ class Retriever(IRetriever):
         self._extractor, self._linker = build_entity_stack(settings.ner_backend, settings.entity_aliases)
         self._planner = MemoryPlanner()
 
-    def _query_graph_entity(self, entity: str, facts: list[Fact], seen_ids: set[str]) -> list[Fact]:
+    def _query_graph_entities(self, entities: list[str], facts: list[Fact], seen_ids: set[str]) -> list[Fact]:
         found: list[Fact] = []
-        for variant in _entity_variants(entity):
-            for fact in self._graph.query(subject=variant):
-                if _add_fact(fact, facts, seen_ids):
-                    found.append(fact)
-            for fact in self._graph.query(object=variant):
-                if _add_fact(fact, facts, seen_ids):
-                    found.append(fact)
+        if not entities:
+            return found
+
+        if hasattr(self._graph, "query_entity_neighborhood"):
+            candidates = self._graph.query_entity_neighborhood(entities)  # type: ignore[attr-defined]
+        else:
+            candidates = []
+            for entity in entities:
+                candidates.extend(self._graph.query(subject=entity))
+                candidates.extend(self._graph.query(object=entity))
+
+        for fact in candidates:
+            if _add_fact(fact, facts, seen_ids):
+                found.append(fact)
+                if len(facts) >= _MAX_GRAPH_FACTS:
+                    break
         return found
 
     def _expand_graph_two_hop(self, seed_entities: list[str]) -> list[Fact]:
         facts: list[Fact] = []
         seen_ids: set[str] = set()
-        frontier: list[str] = list(seed_entities)
         seen_entities: set[str] = set()
+        frontier = _bounded_unique(seed_entities, limit=_MAX_GRAPH_FRONTIER)
+
         for _hop in range(2):
-            next_frontier: list[str] = []
-            for entity in frontier:
-                variants = _entity_variants(entity)
-                if not variants:
-                    continue
-                canonical = variants[-1]
-                if canonical in seen_entities:
-                    continue
-                seen_entities.add(canonical)
-                found = self._query_graph_entity(entity, facts, seen_ids)
-                for fact in found:
-                    next_frontier.extend([fact.subject, fact.object])
-            frontier = next_frontier
-            if not frontier:
+            variants = _entity_variants_for_frontier(frontier, seen_entities, limit=_MAX_GRAPH_FRONTIER)
+            if not variants:
                 break
+            found = self._query_graph_entities(variants, facts, seen_ids)
+            if not found or len(facts) >= _MAX_GRAPH_FACTS:
+                break
+            frontier = _next_graph_frontier(found, seen_entities, limit=_MAX_GRAPH_FRONTIER)
         return facts
 
     @timed("retriever.retrieve", slow_ms=100)
@@ -262,17 +268,17 @@ class Retriever(IRetriever):
         memory_type: str,
         limit: int | None = None,
     ) -> list[Any]:
-        filtered = [
-            item
-            for item in items
-            if _passes_scope_filter(item, memory_type=memory_type, scope_filter=scope_filter)
-        ]
-        ranked = sorted(
-            filtered,
-            key=lambda item: (_memory_score(item, domain_weights), _memory_time(item)),
-            reverse=True,
-        )
-        return ranked[:limit] if limit is not None else ranked
+        scored: list[tuple[tuple[float, float, int], Any]] = []
+        for idx, item in enumerate(items):
+            if not _passes_scope_filter(item, memory_type=memory_type, scope_filter=scope_filter):
+                continue
+            scored.append(((_memory_score(item, domain_weights), _memory_time(item), -idx), item))
+
+        if limit is not None:
+            if limit <= 0:
+                return []
+            return [item for _, item in heapq.nlargest(limit, scored, key=lambda pair: pair[0])]
+        return [item for _, item in sorted(scored, key=lambda pair: pair[0], reverse=True)]
 
 
 def _domain_weights(query: str, domain_graph: Any | None, scope_filter: RetrievalScopeFilter) -> dict[str, float]:
@@ -383,6 +389,48 @@ def _scope_domain_ids(scope: dict[str, Any]) -> list[str]:
     if isinstance(raw, str):
         return [raw]
     return [str(item) for item in raw if str(item)]
+
+
+def _bounded_unique(values: list[str], *, limit: int) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        normalized = str(value or "").strip()
+        key = normalized.casefold()
+        if not normalized or key in seen:
+            continue
+        seen.add(key)
+        out.append(normalized)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _entity_variants_for_frontier(frontier: list[str], seen_entities: set[str], *, limit: int) -> list[str]:
+    variants: list[str] = []
+    for entity in frontier:
+        for variant in _entity_variants(entity):
+            key = variant.casefold()
+            if key in seen_entities:
+                continue
+            seen_entities.add(key)
+            variants.append(variant)
+            if len(variants) >= limit:
+                return variants
+    return variants
+
+
+def _next_graph_frontier(facts: list[Fact], seen_entities: set[str], *, limit: int) -> list[str]:
+    frontier: list[str] = []
+    for fact in facts:
+        for value in (fact.subject, fact.object):
+            key = str(value or "").casefold()
+            if not value or key in seen_entities:
+                continue
+            frontier.append(str(value))
+            if len(frontier) >= limit:
+                return frontier
+    return frontier
 
 
 def _string_list(value: Any) -> list[str]:
