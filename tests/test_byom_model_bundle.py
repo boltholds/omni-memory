@@ -12,6 +12,34 @@ class DummyLLM:
         return {"text": "dummy answer", "model": "dummy-llm", "finish_reason": "stop"}
 
 
+class DistillingLLM:
+    def generate(self, messages: list[Msg], temperature: float = 0.3) -> LLMResult:
+        return {
+            "text": """
+            {
+              "candidates": [
+                {
+                  "kind": "fact",
+                  "should_write": true,
+                  "confidence": 0.93,
+                  "reason": "The project framework is explicitly stated.",
+                  "evidence_quote": "OmniMemory uses FastAPI.",
+                  "temporal_scope": "current",
+                  "payload": {
+                    "subject": "OmniMemory",
+                    "predicate": "uses",
+                    "object": "FastAPI"
+                  }
+                }
+              ],
+              "rejected": []
+            }
+            """,
+            "model": "local-distiller",
+            "finish_reason": "stop",
+        }
+
+
 class TinyEmbedder:
     dim = 8
 
@@ -38,3 +66,20 @@ def test_byom_bundle_can_supply_llm_and_embedder():
     answer = memory.ask("Where is Alice?")
     assert answer.answer == "dummy answer"
     assert answer.model == "dummy-llm"
+
+
+def test_llm_bundle_can_power_session_distillation_without_explicit_distiller():
+    memory = OmniMemory(
+        model_bundle=ModelBundle(
+            llm=DistillingLLM(),
+            embedder=TinyEmbedder(),
+        )
+    )
+
+    memory.ingest_turn("user", "OmniMemory uses FastAPI.")
+    result = memory.commit_session(source="test-distiller")
+
+    assert result.saved_count == 1
+    assert result.saved[0].subject == "omnimemory"
+    assert result.saved[0].predicate == "uses"
+    assert result.saved[0].object == "FastAPI"

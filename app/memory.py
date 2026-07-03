@@ -34,6 +34,7 @@ from domain.repositories import IFactRepo
 from domain.writeback import WritebackRequest, WritebackResult
 from app.session_distillation import ConservativeCandidateValidator, accepted_candidates, build_transcript, candidates_to_writeback_items
 from infra.consistency import SimpleConsistencyEngine
+from infra.distillers.factory import build_session_distiller
 from infra.llm.llm_factory import build_llm
 from infra.repo.decision_repo import DecisionRepo
 from infra.repo.episodic_repo import EpisodicRepo
@@ -161,12 +162,12 @@ class OmniMemory:
         )
         self.development_cycle_recorder = DevelopmentCycleRecorder()
         self.writeback_service = build_writeback_service(repositories=self.repositories, reject_conflicts=reject_conflicts)
-        self.command_interpreter = MemoryCommandInterpreter(MemoryCommandContext(writeback_service=self.writeback_service))
-        self.distiller = distiller or bundle.distiller
         self._session_turns: list[SessionTurn] = []
         self.reranker = bundle.reranker
         self.prompt_renderer = PromptRenderer()
         self.llm = llm if llm is not None else (bundle.llm or (build_llm() if use_llm else None))
+        self.distiller = distiller or bundle.distiller or build_session_distiller(existing_llm=self.llm)
+        self.command_interpreter = MemoryCommandInterpreter(MemoryCommandContext(writeback_service=self.writeback_service))
         self.fact_miner = FactMiningService(writeback_service=self.writeback_service, extractor=fact_extractor, llm=self.llm)
 
     def write_items(self, items: list[dict[str, Any]], *, source: str = "user", dry_run: bool = False, meta: dict[str, Any] | None = None) -> WriteReport:

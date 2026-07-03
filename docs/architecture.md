@@ -160,6 +160,36 @@ Dry-run still runs conversion and write policies, including provenance, scope, T
 
 Conflict handling defaults to `policy_mode=review`, so conflicting mined facts become review candidates instead of silently overwriting durable memory.
 
+## Ollama session distillation
+
+Session distillation can reuse the configured LLM or use a dedicated local model:
+
+```text
+DISTILLER_PROVIDER=inherit
+```
+
+With `inherit`, `OmniMemory` builds a conservative session distiller from the already configured LLM. To run the distiller on a separate Ollama model, configure it explicitly:
+
+```text
+DISTILLER_PROVIDER=openai-compatible
+DISTILLER_BASE_URL=http://localhost:11434/v1
+DISTILLER_MODEL=qwen2.5:7b-instruct
+DISTILLER_API_KEY=local
+DISTILLER_TEMPERATURE=0
+```
+
+Recommended local distiller order for JSON extraction:
+
+```text
+qwen2.5:7b-instruct
+qwen3.5
+gpt-oss:20b
+deepseek-r1:8b
+gemma4
+```
+
+Small/code/vision-first models such as `gemma3:1b`, `starcoder2:3b`, `StarCoder` and `qwen3-vl:8b` are better kept for smoke checks, code tasks or multimodal experiments, not conservative memory distillation.
+
 ## Policy-first writeback
 
 Every write passes through:

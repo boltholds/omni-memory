@@ -15,7 +15,7 @@ log = logging.getLogger("app.llm")
 class OllamaLLM(ILLMProvider):
     def __init__(self, model: str | None = None, base_url: str | None = None):
         self.model = model or settings.llm_ollama_model
-        self.base = (base_url or settings.ollama_base_url or "http://localhost:11434/v1").rstrip("/")
+        self.base = _native_ollama_base_url(base_url or settings.ollama_base_url)
 
     def generate(self, messages: List[Msg], temperature: float | None = None) -> LLMResult:
         url = f"{self.base}/api/chat"
@@ -57,3 +57,10 @@ class OllamaLLM(ILLMProvider):
             dur = int((time.perf_counter() - t0) * 1000)
             log.exception("llm_call_failed", extra={"model": self.model, "duration_ms": dur})
             raise
+
+
+def _native_ollama_base_url(base_url: str | None) -> str:
+    base = (base_url or "http://localhost:11434").rstrip("/")
+    if base.endswith("/v1"):
+        return base[:-3].rstrip("/")
+    return base

@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     openai_api_key: str  = "EMPTY"
     openai_base_url: str = "http://10.22.0.6:11434/v1"   # опционально: совместимые провайдеры
     ollama_base_url: str | None = None
+    distiller_provider: str = "inherit"  # inherit|none|openai-compatible|openai|ollama
+    distiller_model: str | None = None
+    distiller_api_key: str | None = None
+    distiller_base_url: str | None = None
+    distiller_temperature: float = 0.0
     
     prompt_template_dir: str = "templates/prompt"
     prompt_system_template: str = "system.j2"
