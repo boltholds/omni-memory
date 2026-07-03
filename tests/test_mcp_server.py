@@ -247,7 +247,10 @@ def test_mcp_decision_records_are_written_listed_and_retrieved_in_context():
     got = handlers["omni_memory_get_decision"](decision_id=decision_id)["decision"]
     assert got["decision"].startswith("Use official MCP SDK")
 
-    context = handlers["omni_memory_context"](query="Why did we choose FastMCP?")
+    context = handlers["omni_memory_context"](
+        query="Why did we choose FastMCP?",
+        intent="make_decision",
+    )
     sections = {section["title"]: section["body"] for section in context["sections"]}
     assert "Decision Records" in sections
     assert "Use FastMCP for MCP server" in sections["Decision Records"]
@@ -278,11 +281,68 @@ def test_mcp_experience_records_are_searchable_and_retrieved_in_context():
     assert found[0]["goal"] == "Improve MCP compatibility"
     assert "protocol SDK" in found[0]["lesson"]
 
-    context = handlers["omni_memory_context"](query="How should we improve MCP compatibility?")
+    context = handlers["omni_memory_context"](
+        query="How should we improve MCP compatibility?",
+        intent="debug_failure",
+    )
     sections = {section["title"]: section["body"] for section in context["sections"]}
     assert "Relevant Experience" in sections
     assert "Prefer the official protocol SDK" in sections["Relevant Experience"]
     assert "building MCP integrations" in sections["Relevant Experience"]
+
+
+def test_mcp_context_uses_memory_intent_to_select_relevant_sections():
+    handlers = build_mcp_handlers(_memory())
+
+    handlers["omni_memory_write_fact"](
+        subject="omnimemory",
+        predicate="framework",
+        object="fastapi",
+        source="test",
+    )
+    handlers["omni_memory_write_note"](
+        text="OmniMemory has a public FastAPI context endpoint.",
+        source="test",
+    )
+    handlers["omni_memory_write_decision"](
+        title="Use command interpreter for writes",
+        decision="Keep OmniMemory as facade and execute write intents through command objects.",
+        source="test",
+    )
+    handlers["omni_memory_write_experience"](
+        goal="Refactor OmniMemory facade",
+        lesson="When facade methods build raw payloads, move intent translation into commands.",
+        reuse_when=["facade accumulates write operations"],
+        source="test",
+    )
+
+    answer_context = handlers["omni_memory_context"](
+        query="How does OmniMemory write memory?",
+        intent="answer_question",
+    )
+    answer_titles = {section["title"] for section in answer_context["sections"]}
+    assert "Facts" in answer_titles or "Current Beliefs" in answer_titles
+    assert "Semantic Notes" in answer_titles
+    assert "Decision Records" not in answer_titles
+    assert "Relevant Experience" not in answer_titles
+
+    code_context = handlers["omni_memory_context"](
+        query="How should we refactor OmniMemory write operations?",
+        intent="write_code",
+    )
+    code_sections = {section["title"]: section["body"] for section in code_context["sections"]}
+    assert set(code_sections) == {"Decision Records", "Relevant Experience", "Semantic Notes"}
+    assert "command objects" in code_sections["Decision Records"]
+    assert "move intent translation into commands" in code_sections["Relevant Experience"]
+
+    retrieved = handlers["omni_memory_retrieve"](
+        query="How should we refactor OmniMemory write operations?",
+        intent="make_decision",
+    )
+    assert retrieved["facts"] == []
+    assert retrieved["semantic_chunks"] == []
+    assert retrieved["decisions"]
+    assert retrieved["experiences"]
 
 
 def test_mcp_agent_cycle_records_reusable_experience():

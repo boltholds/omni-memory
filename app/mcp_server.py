@@ -35,24 +35,36 @@ def build_mcp_app(memory: OmniMemory) -> FastMCP:
         description="Retrieve facts, episodes and semantic chunks from OmniMemory.",
         structured_output=False,
     )
-    def retrieve(query: str, k_sem: int = 5, k_eps: int = 3) -> str:
-        return call("omni_memory_retrieve", query=query, k_sem=k_sem, k_eps=k_eps)
+    def retrieve(
+        query: str,
+        k_sem: int = 5,
+        k_eps: int = 3,
+        intent: str | None = None,
+        mode: str | None = None,
+    ) -> str:
+        return call("omni_memory_retrieve", query=query, k_sem=k_sem, k_eps=k_eps, intent=intent, mode=mode)
 
     @server.tool(
         name="omni_memory_ask",
         description="Ask a question using OmniMemory context and the configured LLM.",
         structured_output=False,
     )
-    def ask(question: str, lang: str = "en", style: str = "concise") -> str:
-        return call("omni_memory_ask", question=question, lang=lang, style=style)
+    def ask(
+        question: str,
+        lang: str = "en",
+        style: str = "concise",
+        intent: str | None = None,
+        mode: str | None = None,
+    ) -> str:
+        return call("omni_memory_ask", question=question, lang=lang, style=style, intent=intent, mode=mode)
 
     @server.tool(
         name="omni_memory_context",
         description="Build an explainable OmniMemory context pack for a query.",
         structured_output=False,
     )
-    def context(query: str = "") -> str:
-        return call("omni_memory_context", query=query)
+    def context(query: str = "", intent: str | None = None, mode: str | None = None) -> str:
+        return call("omni_memory_context", query=query, intent=intent, mode=mode)
 
     @server.tool(
         name="omni_memory_detect_conflicts",

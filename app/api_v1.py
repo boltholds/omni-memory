@@ -25,6 +25,8 @@ class MemorySearchIn(BaseModel):
     q: str
     k_sem: int = 5
     k_eps: int = 3
+    intent: str | None = None
+    mode: str | None = None
 
 
 class MemoryContextIn(BaseModel):
@@ -32,6 +34,8 @@ class MemoryContextIn(BaseModel):
     max_tokens: int | None = None
     lang: Literal["en", "ru"] = "en"
     style: Literal["concise", "bullets", "detailed", "plain"] = "concise"
+    intent: str | None = None
+    mode: str | None = None
 
 
 def build_v1_router(memory, orchestrator) -> APIRouter:
@@ -45,17 +49,22 @@ def build_v1_router(memory, orchestrator) -> APIRouter:
             "auto_create": settings.memory_audit_auto_create,
         }
 
-    def assemble_context_for_query(q: str, max_tokens: int | None = None):
-        bundle = orchestrator.plan_retrieval(q)
+    def assemble_context_for_query(
+        q: str,
+        max_tokens: int | None = None,
+        intent: str | None = None,
+        mode: str | None = None,
+    ):
+        bundle = orchestrator.plan_retrieval(q, intent=intent, mode=mode)
         if max_tokens:
             old = settings.context_max_tokens
             settings.context_max_tokens = int(max_tokens)
             try:
-                pack = orchestrator.assemble_context(bundle)
+                pack = orchestrator.assemble_context(bundle, intent=intent, mode=mode)
             finally:
                 settings.context_max_tokens = old
         else:
-            pack = orchestrator.assemble_context(bundle)
+            pack = orchestrator.assemble_context(bundle, intent=intent, mode=mode)
         return bundle, pack
 
     @router.post("/memories/remember")
@@ -95,14 +104,25 @@ def build_v1_router(memory, orchestrator) -> APIRouter:
     @router.post("/memories/search")
     def search(inp: MemorySearchIn):
         """Retrieve semantic chunks, graph facts, current beliefs and episodes."""
-        bundle = memory.retrieve(inp.q, k_sem=inp.k_sem, k_eps=inp.k_eps)
+        bundle = memory.retrieve(
+            inp.q,
+            k_sem=inp.k_sem,
+            k_eps=inp.k_eps,
+            intent=inp.intent,
+            mode=inp.mode,
+        )
         metrics.inc("v1_memory_search_calls", 1)
         return bundle.model_dump(mode="json")
 
     @router.post("/context")
     def context(inp: MemoryContextIn):
         """Return structured context plus the retrieval bundle used to build it."""
-        bundle, pack = assemble_context_for_query(inp.q, inp.max_tokens)
+        bundle, pack = assemble_context_for_query(
+            inp.q,
+            inp.max_tokens,
+            intent=inp.intent,
+            mode=inp.mode,
+        )
         metrics.inc("v1_context_calls", 1)
         return {
             "query": inp.q,

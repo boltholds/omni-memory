@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import List, Protocol, Tuple
 
 from app.config import settings
+from app.memory_planner import MemoryPlanner
 from app.tokenizer import build_tokenizer
 from domain.models import ContextSection,ContextPack,RetrievalBundle
 from domain.ports import IConsistencyEngine
@@ -47,11 +48,14 @@ class ContextBuildState:
     bundle: RetrievalBundle
     budget: int
     consistency: IConsistencyEngine | None = None
+    intent: str | None = None
     sections: List[ContextSection] = field(default_factory=list)
     advisories: List[str] = field(default_factory=list)
 
 
 class ContextBuildStrategy(Protocol):
+    key: str
+
     def handle(self, state: ContextBuildState) -> ContextBuildState:
         ...
 
@@ -79,6 +83,7 @@ class BudgetedSectionStrategy:
 
 
 class ConflictsStrategy(BudgetedSectionStrategy):
+    key = "conflicts"
     title = "Conflicts"
 
     def lines(self, bundle: RetrievalBundle) -> List[str]:
@@ -106,6 +111,7 @@ class ConflictsStrategy(BudgetedSectionStrategy):
 
 
 class CurrentBeliefsStrategy(BudgetedSectionStrategy):
+    key = "current_beliefs"
     title = "Current Beliefs"
 
     def lines(self, bundle: RetrievalBundle) -> List[str]:
@@ -113,6 +119,7 @@ class CurrentBeliefsStrategy(BudgetedSectionStrategy):
 
 
 class FactsStrategy(BudgetedSectionStrategy):
+    key = "facts"
     title = "Facts"
 
     def lines(self, bundle: RetrievalBundle) -> List[str]:
@@ -120,6 +127,7 @@ class FactsStrategy(BudgetedSectionStrategy):
 
 
 class EpisodesStrategy(BudgetedSectionStrategy):
+    key = "episodes"
     title = "Episodes"
 
     def handle(self, state: ContextBuildState) -> ContextBuildState:
@@ -132,6 +140,7 @@ class EpisodesStrategy(BudgetedSectionStrategy):
 
 
 class DecisionsStrategy(BudgetedSectionStrategy):
+    key = "decisions"
     title = "Decision Records"
 
     def handle(self, state: ContextBuildState) -> ContextBuildState:
@@ -147,6 +156,7 @@ class DecisionsStrategy(BudgetedSectionStrategy):
 
 
 class RelevantExperienceStrategy(BudgetedSectionStrategy):
+    key = "relevant_experience"
     title = "Relevant Experience"
 
     def handle(self, state: ContextBuildState) -> ContextBuildState:
@@ -166,6 +176,7 @@ class RelevantExperienceStrategy(BudgetedSectionStrategy):
 
 
 class SemanticNotesStrategy(BudgetedSectionStrategy):
+    key = "semantic_notes"
     title = "Semantic Notes"
 
     def handle(self, state: ContextBuildState) -> ContextBuildState:
@@ -182,6 +193,8 @@ class SemanticNotesStrategy(BudgetedSectionStrategy):
 
 
 class EmptyContextAdvisoryStrategy:
+    key = "empty_context_advisory"
+
     def handle(self, state: ContextBuildState) -> ContextBuildState:
         if not state.sections:
             state.advisories.append(
@@ -191,15 +204,27 @@ class EmptyContextAdvisoryStrategy:
         return state
 
 
-def _context_strategy_chain() -> List[ContextBuildStrategy]:
+def _context_strategy_chain(intent: str | None = None) -> List[ContextBuildStrategy]:
+    strategies: dict[str, ContextBuildStrategy] = {
+        strategy.key: strategy
+        for strategy in [
+            ConflictsStrategy(),
+            CurrentBeliefsStrategy(),
+            FactsStrategy(),
+            EpisodesStrategy(),
+            DecisionsStrategy(),
+            RelevantExperienceStrategy(),
+            SemanticNotesStrategy(),
+        ]
+    }
+    profile = MemoryPlanner().profile(intent)
+    ordered = [
+        strategies[key]
+        for key in profile.context_sections
+        if key in strategies
+    ]
     return [
-        ConflictsStrategy(),
-        CurrentBeliefsStrategy(),
-        FactsStrategy(),
-        EpisodesStrategy(),
-        DecisionsStrategy(),
-        RelevantExperienceStrategy(),
-        SemanticNotesStrategy(),
+        *ordered,
         EmptyContextAdvisoryStrategy(),
     ]
 
@@ -208,14 +233,15 @@ def build_context(
     bundle: RetrievalBundle,
     max_tokens: int,
     consistency: IConsistencyEngine | None = None,
+    intent: str | None = None,
 ) -> Tuple[ContextPack, List[str]]:
     """
     Собираем секции в порядке приоритета с учётом бюджета.
     Возвращает ContextPack и список advisories.
     """
-    state = ContextBuildState(bundle=bundle, budget=max_tokens, consistency=consistency)
+    state = ContextBuildState(bundle=bundle, budget=max_tokens, consistency=consistency, intent=intent)
 
-    for strategy in _context_strategy_chain():
+    for strategy in _context_strategy_chain(intent):
         state = strategy.handle(state)
 
     return ContextPack(sections=state.sections, advisories=state.advisories), state.advisories

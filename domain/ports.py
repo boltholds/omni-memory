@@ -49,10 +49,27 @@ class IConsistencyEngine(ABC):
 
 class IRetriever(ABC):
     @abstractmethod
-    def retrieve(self, query: str, k_sem: int = 5, k_eps: int = 3) -> RetrievalBundle: ...
+    def retrieve(
+        self,
+        query: str,
+        k_sem: int = 5,
+        k_eps: int = 3,
+        intent: str | None = None,
+        mode: str | None = None,
+    ) -> RetrievalBundle: ...
 
 class IMemoryOrchestrator(ABC):
     @abstractmethod
-    def plan_retrieval(self, query: str) -> RetrievalBundle: ...
+    def plan_retrieval(
+        self,
+        query: str,
+        intent: str | None = None,
+        mode: str | None = None,
+    ) -> RetrievalBundle: ...
     @abstractmethod
-    def assemble_context(self, bundle: RetrievalBundle) -> ContextPack: ...
+    def assemble_context(
+        self,
+        bundle: RetrievalBundle,
+        intent: str | None = None,
+        mode: str | None = None,
+    ) -> ContextPack: ...

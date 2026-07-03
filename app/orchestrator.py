@@ -14,16 +14,19 @@ class Orchestrator(IMemoryOrchestrator):
         self._retriever = retriever
         self._consistency = consistency
 
-    def plan_retrieval(self, query: str) -> RetrievalBundle:
+    def plan_retrieval(self, query: str, intent: str | None = None, mode: str | None = None) -> RetrievalBundle:
         metrics.inc("context_calls", 1)
-        return self._retriever.retrieve(query)
+        if intent is None and mode is None:
+            return self._retriever.retrieve(query)
+        return self._retriever.retrieve(query, intent=intent, mode=mode)
 
     @timed("retriever.retrieve", slow_ms=100)
-    def assemble_context(self, bundle: RetrievalBundle) -> ContextPack:
+    def assemble_context(self, bundle: RetrievalBundle, intent: str | None = None, mode: str | None = None) -> ContextPack:
         pack, advisories = build_context(
             bundle,
             settings.context_max_tokens,
             consistency=self._consistency,
+            intent=intent or mode,
         )
         pack.advisories = list(dict.fromkeys(advisories))
         return pack

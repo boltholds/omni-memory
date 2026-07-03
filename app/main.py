@@ -29,6 +29,8 @@ class ContextIn(BaseModel):
     draft: Optional[bool] = False
     lang: Literal["en","ru"] = "en"
     style: Literal["concise", "bullets", "detailed", "plain"] = "concise"
+    intent: Optional[str] = None
+    mode: Optional[str] = None
 
 
 
@@ -36,6 +38,8 @@ class RetrieveIn(BaseModel):
     q: str
     k_sem: int = 5
     k_eps: int = 3
+    intent: Optional[str] = None
+    mode: Optional[str] = None
 
 
 class GenerateIn(BaseModel):
@@ -57,6 +61,8 @@ class AnswerIn(BaseModel):
     style: Literal["concise", "bullets", "detailed", "plain"] = "concise"
     temperature: Optional[float] = None
     max_tokens: Optional[int] = None  # для сборки контекста
+    intent: Optional[str] = None
+    mode: Optional[str] = None
 
 class AnswerOut(BaseModel):
     answer: str
@@ -132,7 +138,7 @@ def create_app() -> FastAPI:
 
     @app.post("/retrieve", response_model=RetrievalBundle)
     def retrieve(inp: RetrieveIn):
-        out = retriever.retrieve(inp.q, inp.k_sem, inp.k_eps)
+        out = retriever.retrieve(inp.q, inp.k_sem, inp.k_eps, intent=inp.intent, mode=inp.mode)
         metrics.inc("retrieve_calls", 1)
         return out
     @app.post("/writeback", response_model=WriteReport)
@@ -158,7 +164,9 @@ def create_app() -> FastAPI:
     @app.post("/context", response_model=ContextPack)
     def context(inp: Optional[ContextIn] = None):
         q = "" if inp is None else inp.q
-        bundle = orchestrator.plan_retrieval(q)
+        intent = None if inp is None else inp.intent
+        mode = None if inp is None else inp.mode
+        bundle = orchestrator.plan_retrieval(q, intent=intent, mode=mode)
 
         # временно «подменим» бюджет из запроса
         if inp and inp.max_tokens:
@@ -166,11 +174,11 @@ def create_app() -> FastAPI:
             old = _settings.context_max_tokens
             try:
                 _settings.context_max_tokens = int(inp.max_tokens)
-                pack = orchestrator.assemble_context(bundle)
+                pack = orchestrator.assemble_context(bundle, intent=intent, mode=mode)
             finally:
                 _settings.context_max_tokens = old
         else:
-            pack = orchestrator.assemble_context(bundle)
+            pack = orchestrator.assemble_context(bundle, intent=intent, mode=mode)
 
         # черновик ответа при наличии провайдера
         if inp and inp.draft and llm_provider is not None:
@@ -183,16 +191,16 @@ def create_app() -> FastAPI:
     @app.post("/answer", response_model=AnswerOut)
     def answer(inp: AnswerIn):
         # 1) планируем и собираем контекст (учтём max_tokens, если задан)
-        bundle = orchestrator.plan_retrieval(inp.q)
+        bundle = orchestrator.plan_retrieval(inp.q, intent=inp.intent, mode=inp.mode)
         if inp.max_tokens:
             old = settings.context_max_tokens
             settings.context_max_tokens = int(inp.max_tokens)
             try:
-                pack = orchestrator.assemble_context(bundle)
+                pack = orchestrator.assemble_context(bundle, intent=inp.intent, mode=inp.mode)
             finally:
                 settings.context_max_tokens = old
         else:
-            pack = orchestrator.assemble_context(bundle)
+            pack = orchestrator.assemble_context(bundle, intent=inp.intent, mode=inp.mode)
 
 
         # 1.1) (ищем конфликты среди фактов, которые попали в текущий bundle)

@@ -29,6 +29,8 @@ MCP_TOOL_SCHEMAS: list[dict[str, Any]] = [
                 "query": {"type": "string"},
                 "k_sem": {"type": "integer", "default": 5},
                 "k_eps": {"type": "integer", "default": 3},
+                "intent": {"type": "string"},
+                "mode": {"type": "string"},
             },
             "required": ["query"],
         },
@@ -42,6 +44,8 @@ MCP_TOOL_SCHEMAS: list[dict[str, Any]] = [
                 "question": {"type": "string"},
                 "lang": {"type": "string", "default": "en"},
                 "style": {"type": "string", "default": "concise"},
+                "intent": {"type": "string"},
+                "mode": {"type": "string"},
             },
             "required": ["question"],
         },
@@ -53,6 +57,8 @@ MCP_TOOL_SCHEMAS: list[dict[str, Any]] = [
             "type": "object",
             "properties": {
                 "query": {"type": "string", "default": ""},
+                "intent": {"type": "string"},
+                "mode": {"type": "string"},
             },
         },
     },
@@ -370,14 +376,20 @@ def build_mcp_handlers(memory: OmniMemory) -> dict[str, Callable[..., Any]]:
             kwargs["query"],
             k_sem=kwargs.get("k_sem", 5),
             k_eps=kwargs.get("k_eps", 3),
+            intent=kwargs.get("intent"),
+            mode=kwargs.get("mode"),
         ).model_dump(),
         "omni_memory_ask": lambda **kwargs: memory.ask(
             kwargs["question"],
             lang=kwargs.get("lang", "en"),
             style=kwargs.get("style", "concise"),
+            intent=kwargs.get("intent"),
+            mode=kwargs.get("mode"),
         ).__dict__,
         "omni_memory_context": lambda **kwargs: memory.build_context(
-            kwargs.get("query", "")
+            kwargs.get("query", ""),
+            intent=kwargs.get("intent"),
+            mode=kwargs.get("mode"),
         ).model_dump(),
         "omni_memory_detect_conflicts": detect_conflicts,
         "omni_memory_write_fact": lambda **kwargs: memory.write_fact(

@@ -443,15 +443,29 @@ class OmniMemory:
 
         return result
 
-    def retrieve(self, query: str, *, k_sem: int = 5, k_eps: int = 3) -> RetrievalBundle:
-        return self.retriever.retrieve(query, k_sem=k_sem, k_eps=k_eps)
+    def retrieve(
+        self,
+        query: str,
+        *,
+        k_sem: int = 5,
+        k_eps: int = 3,
+        intent: str | None = None,
+        mode: str | None = None,
+    ) -> RetrievalBundle:
+        return self.retriever.retrieve(query, k_sem=k_sem, k_eps=k_eps, intent=intent, mode=mode)
 
-    def build_context(self, query: str) -> ContextPack:
-        bundle = self.orchestrator.plan_retrieval(query)
-        return self.orchestrator.assemble_context(bundle)
+    def build_context(
+        self,
+        query: str,
+        *,
+        intent: str | None = None,
+        mode: str | None = None,
+    ) -> ContextPack:
+        bundle = self.orchestrator.plan_retrieval(query, intent=intent, mode=mode)
+        return self.orchestrator.assemble_context(bundle, intent=intent, mode=mode)
 
-    def detect_conflicts(self, query: str | None = None) -> ConflictReport:
-        bundle = self.orchestrator.plan_retrieval(query or "")
+    def detect_conflicts(self, query: str | None = None, *, intent: str | None = None) -> ConflictReport:
+        bundle = self.orchestrator.plan_retrieval(query or "", intent=intent)
         return self.consistency.detect_conflicts(bundle.facts)
 
     def maintain_facts(
@@ -468,9 +482,11 @@ class OmniMemory:
         style: str = "concise",
         temperature: float | None = None,
         include_context: bool = True,
+        intent: str | None = None,
+        mode: str | None = None,
     ) -> MemoryAnswer:
-        bundle = self.orchestrator.plan_retrieval(question)
-        pack = self.orchestrator.assemble_context(bundle)
+        bundle = self.orchestrator.plan_retrieval(question, intent=intent, mode=mode)
+        pack = self.orchestrator.assemble_context(bundle, intent=intent, mode=mode)
         conflict_report = self.consistency.detect_conflicts(bundle.facts)
 
         if self.llm is None:

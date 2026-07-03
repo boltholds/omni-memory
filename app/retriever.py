@@ -7,6 +7,7 @@ from domain.models import RetrievalBundle, Fact, Episode, DecisionRecord, Experi
 from domain.ports import IRetriever, IMemoryReadRepository, IGraphRepository, IEpisodicRepository, IDecisionRepository, IExperienceRepository
 from app.entities import build_entity_stack
 from app.config import settings
+from app.memory_planner import MemoryPlanner
 from app.profiling import timed
 from app.stats import stats
 from infra.consistency import build_fact_beliefs
@@ -106,6 +107,7 @@ class Retriever(IRetriever):
         self._decisions = decision_repo
         self._experiences = experience_repo
         self._extractor, self._linker = build_entity_stack(settings.ner_backend, settings.entity_aliases)
+        self._planner = MemoryPlanner()
 
     def _query_graph_entity(self, entity: str, facts: list[Fact], seen_ids: set[str]) -> list[Fact]:
         found: list[Fact] = []
@@ -149,35 +151,49 @@ class Retriever(IRetriever):
         return facts
 
     @timed("retriever.retrieve", slow_ms=100)
-    def retrieve(self, query: str, k_sem: int = 5, k_eps: int = 3) -> RetrievalBundle:
+    def retrieve(
+        self,
+        query: str,
+        k_sem: int = 5,
+        k_eps: int = 3,
+        intent: str | None = None,
+        mode: str | None = None,
+    ) -> RetrievalBundle:
+        profile = self._planner.profile(intent, mode=mode)
         raw_ents = self._extractor.extract(query)
         linked_ents = self._linker.link_all(raw_ents)
         ents = _compound_entities(linked_ents)
 
         # I Семантические чанки
-        stop_vec = stats.timeit("retriever.vec_ms")
-        semantic_chunks = self._vector.semantic_search(query, k=k_sem)
-        stop_vec()
+        semantic_chunks = []
+        if profile.semantic:
+            stop_vec = stats.timeit("retriever.vec_ms")
+            semantic_chunks = self._vector.semantic_search(query, k=k_sem)
+            stop_vec()
 
         # II Факты: прямой поиск + 2-hop expansion по графу.
-        stop_kg = stats.timeit("retriever.kg_ms")
-        facts: List[Fact] = self._expand_graph_two_hop(ents)
-        stop_kg()
+        facts: List[Fact] = []
+        if profile.facts:
+            stop_kg = stats.timeit("retriever.kg_ms")
+            facts = self._expand_graph_two_hop(ents)
+            stop_kg()
 
         # III Эпизоды (пользователя пока не извлекаем -> None)
-        stop_ep = stats.timeit("retriever.ep_ms")
-        episodes: List[Episode] = self._episodic.search(user=None, entities=ents, k=k_eps)
-        stop_ep()
+        episodes: List[Episode] = []
+        if profile.episodes:
+            stop_ep = stats.timeit("retriever.ep_ms")
+            episodes = self._episodic.search(user=None, entities=ents, k=k_eps)
+            stop_ep()
 
         decisions: List[DecisionRecord] = []
-        if self._decisions is not None:
+        if profile.decisions and self._decisions is not None:
             decisions = self._decisions.search(query, k=k_eps)
 
         experiences: List[ExperienceRecord] = []
-        if self._experiences is not None:
+        if profile.experiences and self._experiences is not None:
             experiences = self._experiences.search(query, k=k_eps)
 
-        beliefs = build_fact_beliefs(facts)
+        beliefs = build_fact_beliefs(facts) if profile.beliefs else []
 
         return RetrievalBundle(
             semantic_chunks=semantic_chunks,
