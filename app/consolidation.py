@@ -5,6 +5,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from domain.experience_evaluator import DomainExperienceEvaluator, EvaluationResult, ExperienceEvaluator
 from domain.models import ExperienceRecord, FailurePatternRecord, Provenance, SkillRecord
 from domain.writeback import stable_id
 
@@ -40,8 +41,8 @@ class ExperienceConsolidator:
     """Deterministic MVP consolidator.
 
     It does not run in the write path. It inspects stored experiences and proposes
-    reusable SkillRecord and FailurePatternRecord objects. Callers can run it in
-    dry-run mode first, then apply the same rules once the proposals look useful.
+    reusable SkillRecord and FailurePatternRecord objects. Domain-specific success
+    and failure decisions are delegated to an ExperienceEvaluator.
     """
 
     def __init__(
@@ -50,10 +51,12 @@ class ExperienceConsolidator:
         experience_repo: Any,
         skill_repo: Any,
         failure_pattern_repo: Any,
+        evaluator: ExperienceEvaluator | None = None,
     ) -> None:
         self.experience_repo = experience_repo
         self.skill_repo = skill_repo
         self.failure_pattern_repo = failure_pattern_repo
+        self.evaluator = evaluator or DomainExperienceEvaluator()
 
     def consolidate(self, *, dry_run: bool = True, min_confidence: float = 0.85) -> ConsolidationResult:
         experiences = [
@@ -61,9 +64,10 @@ class ExperienceConsolidator:
             for item in self.experience_repo.list_experiences()
             if item.confidence >= min_confidence and _eligible_for_consolidation(item)
         ]
+        evaluations = {item.id: self.evaluator.evaluate(item) for item in experiences}
         proposals = [
-            *self._skill_proposals(experiences),
-            *self._failure_pattern_proposals(experiences),
+            *self._skill_proposals(experiences, evaluations),
+            *self._failure_pattern_proposals(experiences, evaluations),
         ]
 
         if dry_run:
@@ -98,10 +102,15 @@ class ExperienceConsolidator:
             saved_failure_patterns=saved_failure_patterns,
         )
 
-    def _skill_proposals(self, experiences: list[ExperienceRecord]) -> list[ConsolidationProposal]:
+    def _skill_proposals(self, experiences: list[ExperienceRecord], evaluations: dict[str, EvaluationResult]) -> list[ConsolidationProposal]:
         buckets: dict[str, list[ExperienceRecord]] = {}
         for item in experiences:
+            evaluation = evaluations[item.id]
             if not item.lesson or not item.reuse_when:
+                continue
+            if evaluation.reuse_potential < 0.5:
+                continue
+            if evaluation.recommended_memory_type not in {"skill", "both", "none"} and evaluation.success_score < 0.6:
                 continue
             key = _topic_key(item)
             buckets.setdefault(key, []).append(item)
@@ -125,6 +134,7 @@ class ExperienceConsolidator:
                 "meta": {
                     "promoted_from": "experience_consolidation",
                     "topic": topic,
+                    "evaluator": "domain_experience_evaluator",
                     **_promotion_scope_meta(items),
                 },
             }
@@ -139,9 +149,9 @@ class ExperienceConsolidator:
             )
         return proposals
 
-    def _failure_pattern_proposals(self, experiences: list[ExperienceRecord]) -> list[ConsolidationProposal]:
-        failed = [item for item in experiences if _looks_failed(item)]
-        successful = [item for item in experiences if _looks_successful(item)]
+    def _failure_pattern_proposals(self, experiences: list[ExperienceRecord], evaluations: dict[str, EvaluationResult]) -> list[ConsolidationProposal]:
+        failed = [item for item in experiences if _looks_failed(item, evaluations[item.id])]
+        successful = [item for item in experiences if _looks_successful(item, evaluations[item.id])]
         proposals: list[ConsolidationProposal] = []
 
         for failure in failed:
@@ -163,6 +173,7 @@ class ExperienceConsolidator:
                 "meta": {
                     "promoted_from": "experience_consolidation",
                     "topic": topic,
+                    "evaluator": "domain_experience_evaluator",
                     **_promotion_scope_meta([failure, fix]),
                 },
             }
@@ -205,6 +216,7 @@ def _promotion_scope_meta(items: list[ExperienceRecord]) -> dict[str, Any]:
     domain_ids = _unique([domain_id for scope in scopes for domain_id in _scope_domain_ids(scope)])
     environments = {str(scope.get("environment") or "") for scope in scopes if scope.get("environment")}
     visibilities = {str(scope.get("visibility") or "") for scope in scopes if scope.get("visibility")}
+    source_domains = _unique([str(item.meta.get("domain")) for item in items if item.meta.get("domain")])
     scope = {
         "tenant_id": next((str(scope.get("tenant_id")) for scope in scopes if scope.get("tenant_id")), "default"),
         "agent_id": next((scope.get("agent_id") for scope in scopes if scope.get("agent_id")), None),
@@ -214,7 +226,12 @@ def _promotion_scope_meta(items: list[ExperienceRecord]) -> dict[str, Any]:
         "visibility": visibilities.pop() if len(visibilities) == 1 else "private",
         "exclude_from_consolidation": False,
     }
-    return {"scope": scope, "source_experience_scopes": scopes}
+    out: dict[str, Any] = {"scope": scope, "source_experience_scopes": scopes}
+    if len(source_domains) == 1:
+        out["domain"] = source_domains[0]
+    elif source_domains:
+        out["domains"] = source_domains
+    return out
 
 
 def _scope(item: ExperienceRecord) -> dict[str, Any]:
@@ -269,23 +286,22 @@ def _skill_procedure(items: list[ExperienceRecord]) -> list[str]:
     return lessons[:5]
 
 
-def _looks_failed(item: ExperienceRecord) -> bool:
-    text = " ".join([item.outcome, item.lesson, str(item.evaluation)]).casefold()
-    return any(marker in text for marker in ["fail", "failed", "error", "regression", "broken", "ошиб", "пад"])
+def _looks_failed(item: ExperienceRecord, evaluation: EvaluationResult) -> bool:
+    return evaluation.failure_score >= 0.6 or evaluation.recommended_memory_type in {"failure_pattern", "both"}
 
 
-def _looks_successful(item: ExperienceRecord) -> bool:
-    if item.evaluation.get("success") is True:
-        return True
-    text = " ".join([item.outcome, item.lesson, str(item.evaluation)]).casefold()
-    return any(marker in text for marker in ["success", "passed", "fixed", "works", "зел", "успеш"])
+def _looks_successful(item: ExperienceRecord, evaluation: EvaluationResult) -> bool:
+    return evaluation.success_score >= 0.6 or evaluation.recommended_memory_type in {"skill", "both"}
 
 
 def _failure_detection(item: ExperienceRecord) -> str:
     tests = item.evaluation.get("tests")
     if tests:
         return f"Tests: {tests}"
-    return "Look for the same symptom in outcome, test output or CI logs."
+    validation = item.evaluation.get("validation") or item.meta.get("validation")
+    if validation:
+        return f"Validation: {validation}"
+    return "Look for the same symptom in outcome, validation metrics, test output or CI logs."
 
 
 _STOP_TERMS = {
