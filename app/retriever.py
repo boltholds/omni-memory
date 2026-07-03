@@ -20,7 +20,6 @@ _MAX_GRAPH_FRONTIER = 64
 _MAX_GRAPH_FACTS = 512
 _RERANK_POOL_MULTIPLIER = 4
 _RERANK_POOL_MIN = 16
-_MIN_RETRIEVAL_SCORE = -3.5
 _UNSCOPED_DURABLE_PENALTY = 1.25
 
 
@@ -462,8 +461,6 @@ def _memory_score(item: Any, domain_weights: dict[str, float], *, scope_filter: 
 
 
 def _retrieval_score_threshold(memory_type: str) -> float:
-    if _normalize_memory_type(memory_type) == "note":
-        return _MIN_RETRIEVAL_SCORE
     return float("-inf")
 
 
