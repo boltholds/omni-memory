@@ -4,6 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.decision_auto_draft import DecisionCandidate, draft_decision_candidates
 from domain.distiller import SessionTurn
 from domain.writeback import WritebackResult
 
@@ -34,6 +35,7 @@ class FinishDevelopmentTaskResult(BaseModel):
     experience: dict[str, Any]
     distillation: dict[str, Any] | None = None
     review_candidates: list[dict[str, Any]] = Field(default_factory=list)
+    decision_candidates: list[DecisionCandidate] = Field(default_factory=list)
     advisories: list[str] = Field(default_factory=list)
 
 
@@ -63,6 +65,10 @@ class DevelopmentMemoryWorkflow:
             if parsed.distill_dry_run:
                 advisories.append("distillation_dry_run")
 
+        decision_candidates = draft_decision_candidates(parsed)
+        if decision_candidates:
+            advisories.append("decision_candidates_review")
+
         experience = self.memory.record_development_cycle(
             {
                 "goal": parsed.goal,
@@ -89,6 +95,7 @@ class DevelopmentMemoryWorkflow:
             experience=experience,
             distillation=distillation,
             review_candidates=review_candidates,
+            decision_candidates=decision_candidates,
             advisories=advisories,
         )
 
