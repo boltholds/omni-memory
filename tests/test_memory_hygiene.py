@@ -119,3 +119,100 @@ def test_domain_graph_repo_supports_multihop_traversal():
     reachable = repo.reachable_domain_ids(omni.id, max_depth=3)
     assert set(reachable) == {infra.id, ci.id, pytest.id}
     assert len(reachable) == 3
+
+
+def test_domain_aware_retrieval_prefers_matching_project_scope():
+    memory = _memory()
+    omni = memory.domain_graph_repo.upsert_node(DomainNode(id=domain_id("project", "omni-memory"), kind="project", name="OmniMemory"))
+    persona = memory.domain_graph_repo.upsert_node(DomainNode(id=domain_id("project", "persona-ai"), kind="project", name="Persona AI"))
+
+    memory.write_skill(
+        name="Fix dependency issue",
+        problem="Persona dependency issue in integration tests",
+        procedure=["Inspect Persona dependencies"],
+        reuse_when=["dependency issue"],
+        confidence=0.9,
+        meta={"domain_ids": [persona.id]},
+        source="codex-dev",
+    )
+    memory.write_skill(
+        name="Fix dependency issue",
+        problem="OmniMemory dependency issue in CI collection",
+        procedure=["Inspect OmniMemory imports"],
+        reuse_when=["dependency issue"],
+        confidence=0.9,
+        meta={"domain_ids": [omni.id]},
+        source="codex-dev",
+    )
+
+    result = memory.retrieve("OmniMemory dependency issue", intent="write_code", k_eps=2)
+
+    assert len(result.skills) == 2
+    assert result.skills[0].meta["scope"]["domain_ids"] == [omni.id]
+
+
+def test_domain_aware_retrieval_downranks_test_ephemeral_memory():
+    memory = _memory()
+
+    memory.write_skill(
+        name="Fix dependency issue",
+        problem="Test fixture dependency issue",
+        procedure=["Use test-only workaround"],
+        reuse_when=["dependency issue"],
+        confidence=0.9,
+        source="test",
+    )
+    memory.write_skill(
+        name="Fix dependency issue",
+        problem="Durable project dependency issue",
+        procedure=["Use durable project fix"],
+        reuse_when=["dependency issue"],
+        confidence=0.9,
+        meta={"domain_ids": ["domain:project:omni-memory"]},
+        source="codex-dev",
+    )
+
+    result = memory.retrieve("dependency issue", intent="write_code", k_eps=2)
+
+    assert len(result.skills) == 2
+    assert result.skills[0].meta["scope"]["durability"] == "durable"
+    assert result.skills[-1].meta["scope"]["environment"] == "test"
+
+
+def test_consolidation_excludes_test_and_ephemeral_experiences():
+    memory = _memory()
+
+    for idx in range(2):
+        memory.record_experience(
+            goal="Consolidate durable domain experience",
+            context="Durable project experience",
+            decision="Promote durable project lesson",
+            actions=["Apply durable fix"],
+            outcome=f"durable success {idx}",
+            evaluation={"success": True, "tests": "passed"},
+            lesson="Durable project lessons may become skills.",
+            reuse_when=["durable project lesson"],
+            confidence=0.92,
+            meta={"domain_ids": ["domain:project:omni-memory"]},
+            source="codex-dev",
+        )
+        memory.record_experience(
+            goal="Consolidate test fixture experience",
+            context="Ephemeral test fixture experience",
+            decision="Do not promote test fixture lesson",
+            actions=["Apply test workaround"],
+            outcome=f"test success {idx}",
+            evaluation={"success": True, "tests": "passed"},
+            lesson="Test fixture lessons should not become skills.",
+            reuse_when=["test fixture lesson"],
+            confidence=0.99,
+            source="test",
+        )
+
+    result = memory.consolidate_experiences(dry_run=False, min_confidence=0.85)
+
+    assert result.saved_skills
+    skill_names = [skill.name for skill in result.saved_skills]
+    assert any("durable" in name.lower() or "promote durable" in name.lower() for name in skill_names)
+    assert all("test fixture" not in skill.name.lower() for skill in result.saved_skills)
+    assert all("test" not in evidence_id for skill in result.saved_skills for evidence_id in skill.evidence_ids)
