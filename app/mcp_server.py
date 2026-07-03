@@ -23,20 +23,20 @@ def build_mcp_app(memory: OmniMemory) -> FastMCP:
         return call("omni_memory_write_items", items=items, source=source, dry_run=dry_run)
 
     @server.tool(name="omni_memory_retrieve", description="Retrieve facts, episodes and semantic chunks from OmniMemory.", structured_output=False)
-    def retrieve(query: str, k_sem: int = 5, k_eps: int = 3, intent: str | None = None, mode: str | None = None) -> str:
-        return call("omni_memory_retrieve", query=query, k_sem=k_sem, k_eps=k_eps, intent=intent, mode=mode)
+    def retrieve(query: str, k_sem: int = 5, k_eps: int = 3, intent: str | None = None, mode: str | None = None, scope: dict[str, Any] | None = None) -> str:
+        return call("omni_memory_retrieve", query=query, k_sem=k_sem, k_eps=k_eps, intent=intent, mode=mode, scope=scope or {})
 
     @server.tool(name="omni_memory_ask", description="Ask a question using OmniMemory context and the configured LLM.", structured_output=False)
-    def ask(question: str, lang: str = "en", style: str = "concise", intent: str | None = None, mode: str | None = None) -> str:
-        return call("omni_memory_ask", question=question, lang=lang, style=style, intent=intent, mode=mode)
+    def ask(question: str, lang: str = "en", style: str = "concise", intent: str | None = None, mode: str | None = None, scope: dict[str, Any] | None = None) -> str:
+        return call("omni_memory_ask", question=question, lang=lang, style=style, intent=intent, mode=mode, scope=scope or {})
 
     @server.tool(name="omni_memory_context", description="Build an explainable OmniMemory context pack for a query.", structured_output=False)
-    def context(query: str = "", intent: str | None = None, mode: str | None = None) -> str:
-        return call("omni_memory_context", query=query, intent=intent, mode=mode)
+    def context(query: str = "", intent: str | None = None, mode: str | None = None, scope: dict[str, Any] | None = None) -> str:
+        return call("omni_memory_context", query=query, intent=intent, mode=mode, scope=scope or {})
 
     @server.tool(name="omni_memory_detect_conflicts", description="Detect conflicts either for provided facts or for facts retrieved by query.", structured_output=False)
-    def detect_conflicts(query: str | None = None, facts: list[dict[str, Any]] | None = None) -> str:
-        return call("omni_memory_detect_conflicts", query=query, facts=facts)
+    def detect_conflicts(query: str | None = None, facts: list[dict[str, Any]] | None = None, scope: dict[str, Any] | None = None) -> str:
+        return call("omni_memory_detect_conflicts", query=query, facts=facts, scope=scope or {})
 
     @server.tool(name="omni_memory_write_fact", description="Save a single structured fact.", structured_output=False)
     def write_fact(subject: str, predicate: str, object: str, source: str = "mcp", confidence: float = 1.0) -> str:
