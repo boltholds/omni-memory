@@ -10,7 +10,6 @@ from app.writeback.service import WriteBackService
 from domain.models import WriteReport
 from domain.writeback import WritebackRawItem, WritebackRequest, WritebackResult
 
-
 T = TypeVar("T")
 
 
@@ -64,14 +63,8 @@ class WriteFactCommand:
             "subject": self.subject.lower().strip(),
             "predicate": self.predicate.lower().strip(),
             "object": self.object_.lower().strip(),
-            "provenance": {
-                "source": self.source,
-                "time": time.time(),
-                "meta": {},
-            },
-            "meta": {
-                "confidence": self.confidence,
-            },
+            "provenance": {"source": self.source, "time": time.time(), "meta": {}},
+            "meta": {"confidence": self.confidence},
         }
         return _to_write_report(WriteItemsCommand([item], source=self.source).execute(context))
 
@@ -87,16 +80,10 @@ class WriteNoteCommand:
             "id": f"note-{uuid.uuid4().hex}",
             "type": "note",
             "payload": {"text": self.text},
-            "provenance": {
-                "source": self.source,
-                "time": time.time(),
-                "meta": self.meta or {},
-            },
+            "provenance": {"source": self.source, "time": time.time(), "meta": self.meta or {}},
             "meta": self.meta or {},
         }
-        return _to_write_report(
-            WriteItemsCommand([item], source=self.source, meta=self.meta).execute(context)
-        )
+        return _to_write_report(WriteItemsCommand([item], source=self.source, meta=self.meta).execute(context))
 
 
 @dataclass(frozen=True)
@@ -124,16 +111,10 @@ class WriteDecisionCommand:
                 "alternatives": self.alternatives or [],
                 "refs": self.refs or {},
             },
-            "provenance": {
-                "source": self.source,
-                "time": time.time(),
-                "meta": {},
-            },
+            "provenance": {"source": self.source, "time": time.time(), "meta": {}},
             "meta": self.meta or {},
         }
-        return _to_write_report(
-            WriteItemsCommand([item], source=self.source, meta=self.meta).execute(context)
-        )
+        return _to_write_report(WriteItemsCommand([item], source=self.source, meta=self.meta).execute(context))
 
 
 @dataclass(frozen=True)
@@ -169,16 +150,74 @@ class RecordExperienceCommand:
                 "confidence": self.confidence,
                 "refs": self.refs or {},
             },
-            "provenance": {
-                "source": self.source,
-                "time": time.time(),
-                "meta": {},
-            },
+            "provenance": {"source": self.source, "time": time.time(), "meta": {}},
             "meta": self.meta or {},
         }
-        return _to_write_report(
-            WriteItemsCommand([item], source=self.source, meta=self.meta).execute(context)
-        )
+        return _to_write_report(WriteItemsCommand([item], source=self.source, meta=self.meta).execute(context))
+
+
+@dataclass(frozen=True)
+class WriteSkillCommand:
+    name: str
+    problem: str = ""
+    procedure: list[str] | None = None
+    reuse_when: list[str] | None = None
+    avoid_when: list[str] | None = None
+    evidence_ids: list[str] | None = None
+    confidence: float = 0.5
+    refs: dict[str, Any] | None = None
+    source: str = "user"
+    meta: dict[str, Any] | None = None
+
+    def execute(self, context: MemoryCommandContext) -> WriteReport:
+        item = {
+            "id": f"skill-{uuid.uuid4().hex}",
+            "type": "skill",
+            "payload": {
+                "name": self.name,
+                "problem": self.problem,
+                "procedure": self.procedure or [],
+                "reuse_when": self.reuse_when or [],
+                "avoid_when": self.avoid_when or [],
+                "evidence_ids": self.evidence_ids or [],
+                "confidence": self.confidence,
+                "refs": self.refs or {},
+            },
+            "provenance": {"source": self.source, "time": time.time(), "meta": {}},
+            "meta": self.meta or {},
+        }
+        return _to_write_report(WriteItemsCommand([item], source=self.source, meta=self.meta).execute(context))
+
+
+@dataclass(frozen=True)
+class WriteFailurePatternCommand:
+    symptom: str
+    root_cause: str = ""
+    fix: str = ""
+    detection: str = ""
+    evidence_ids: list[str] | None = None
+    confidence: float = 0.5
+    refs: dict[str, Any] | None = None
+    source: str = "user"
+    meta: dict[str, Any] | None = None
+
+    def execute(self, context: MemoryCommandContext) -> WriteReport:
+        item = {
+            "id": f"failure-pattern-{uuid.uuid4().hex}",
+            "type": "failure_pattern",
+            "payload": {
+                "symptom": self.symptom,
+                "root_cause": self.root_cause,
+                "fix": self.fix,
+                "detection": self.detection,
+                "evidence_ids": self.evidence_ids or [],
+                "confidence": self.confidence,
+                "refs": self.refs or {},
+            },
+            "provenance": {"source": self.source, "time": time.time(), "meta": {}},
+            "meta": self.meta or {},
+        }
+        return _to_write_report(WriteItemsCommand([item], source=self.source, meta=self.meta).execute(context))
 
 
 @dataclass(frozen=True)
@@ -187,19 +226,11 @@ class RecordAgentCycleCommand:
     source: str = "agent-cycle"
 
     def execute(self, context: MemoryCommandContext) -> WriteReport:
-        record = (
-            self.cycle
-            if isinstance(self.cycle, AgentCycleRecord)
-            else AgentCycleRecord.model_validate(self.cycle)
-        )
+        record = self.cycle if isinstance(self.cycle, AgentCycleRecord) else AgentCycleRecord.model_validate(self.cycle)
         payload = experience_from_agent_cycle(record)
         meta = dict(payload.pop("meta") or {})
         meta.setdefault("recorded_from", "agent_cycle")
-        return RecordExperienceCommand(
-            **payload,
-            source=self.source,
-            meta=meta,
-        ).execute(context)
+        return RecordExperienceCommand(**payload, source=self.source, meta=meta).execute(context)
 
 
 def _to_write_report(result: WritebackResult) -> WriteReport:
