@@ -106,22 +106,27 @@ class DomainGraphRepo:
         return sorted(_unique(out))
 
     def reachable_domain_ids(self, domain_id: str, *, max_depth: int = 2) -> list[str]:
+        """Return nearby domain ids in BFS order, closest domains first."""
         if not self._g.has_node(domain_id) or max_depth < 1:
             return []
         visited: set[str] = {domain_id}
-        frontier: set[str] = {domain_id}
+        frontier: list[str] = [domain_id]
+        ordered: list[str] = []
         for _ in range(max_depth):
-            next_frontier: set[str] = set()
+            next_frontier: list[str] = []
             for item in frontier:
-                next_frontier.update(str(node_id) for node_id in self._g.successors(item))
-                next_frontier.update(str(node_id) for node_id in self._g.predecessors(item))
-            next_frontier -= visited
-            visited.update(next_frontier)
+                neighbours = [str(node_id) for node_id in self._g.successors(item)]
+                neighbours.extend(str(node_id) for node_id in self._g.predecessors(item))
+                for neighbour in _unique(neighbours):
+                    if neighbour in visited:
+                        continue
+                    visited.add(neighbour)
+                    ordered.append(neighbour)
+                    next_frontier.append(neighbour)
             frontier = next_frontier
             if not frontier:
                 break
-        visited.discard(domain_id)
-        return sorted(visited)
+        return ordered
 
     def count(self) -> int:
         return self._g.number_of_nodes()
