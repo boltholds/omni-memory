@@ -10,6 +10,7 @@ from .prompting import PromptRenderer
 from .retriever import Retriever
 from app.agent_cycle import AgentCycleRecord
 from app.consolidation import ConsolidationResult, ExperienceConsolidator
+from app.development_cycle import DevelopmentCycleDraft, DevelopmentCycleRecorder
 from app.fact_maintenance import FactMaintenanceCommand, FactMaintenanceResult, FactMaintenanceService
 from app.memory_commands import (
     MemoryCommandContext,
@@ -149,6 +150,7 @@ class OmniMemory:
             skill_repo=self.repositories.skill,
             failure_pattern_repo=self.repositories.failure_pattern,
         )
+        self.development_cycle_recorder = DevelopmentCycleRecorder()
         self.writeback_service = build_writeback_service(repositories=self.repositories, reject_conflicts=reject_conflicts)
         self.command_interpreter = MemoryCommandInterpreter(MemoryCommandContext(writeback_service=self.writeback_service))
         self.distiller = distiller or bundle.distiller
@@ -207,6 +209,13 @@ class OmniMemory:
 
     def record_agent_cycle(self, cycle: AgentCycleRecord | dict[str, Any], *, source: str = "agent-cycle") -> WriteReport:
         return self.command_interpreter.execute(RecordAgentCycleCommand(cycle=cycle, source=source))
+
+    def draft_development_cycle(self, cycle: DevelopmentCycleDraft | dict[str, Any]) -> AgentCycleRecord:
+        return self.development_cycle_recorder.draft(cycle)
+
+    def record_development_cycle(self, cycle: DevelopmentCycleDraft | dict[str, Any], *, source: str = "development-cycle") -> WriteReport:
+        draft = self.draft_development_cycle(cycle)
+        return self.record_agent_cycle(draft, source=source)
 
     def consolidate_experiences(self, *, dry_run: bool = True, min_confidence: float = 0.85) -> ConsolidationResult:
         return self.consolidator.consolidate(dry_run=dry_run, min_confidence=min_confidence)

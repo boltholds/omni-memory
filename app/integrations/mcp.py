@@ -290,6 +290,51 @@ MCP_TOOL_SCHEMAS: list[dict[str, Any]] = [
             ["goal", "lesson"],
         ),
     },
+    {
+        "name": "omni_memory_draft_development_cycle",
+        "description": "Draft a development cycle as an agent-cycle record without writing memory.",
+        "inputSchema": _object_schema(
+            {
+                "goal": {"type": "string"},
+                "summary": {"type": "string", "default": ""},
+                "changed_files": {"type": "array", "items": {"type": "string"}, "default": []},
+                "commands_run": {"type": "array", "items": {"type": "string"}, "default": []},
+                "tests": {"type": "array", "items": {"type": "string"}, "default": []},
+                "decisions": {"type": "array", "items": {"type": "string"}, "default": []},
+                "outcome": {"type": "string", "default": ""},
+                "lesson": {"type": "string", "default": ""},
+                "reuse_when": {"type": "array", "items": {"type": "string"}, "default": []},
+                "avoid_when": {"type": "array", "items": {"type": "string"}, "default": []},
+                "side_effects": {"type": "array", "items": {"type": "string"}, "default": []},
+                "confidence": {"type": "number", "default": 0.8},
+                "meta": {"type": "object", "default": {}},
+            },
+            ["goal"],
+        ),
+    },
+    {
+        "name": "omni_memory_record_development_cycle",
+        "description": "Record a development cycle as reusable experience.",
+        "inputSchema": _object_schema(
+            {
+                "goal": {"type": "string"},
+                "summary": {"type": "string", "default": ""},
+                "changed_files": {"type": "array", "items": {"type": "string"}, "default": []},
+                "commands_run": {"type": "array", "items": {"type": "string"}, "default": []},
+                "tests": {"type": "array", "items": {"type": "string"}, "default": []},
+                "decisions": {"type": "array", "items": {"type": "string"}, "default": []},
+                "outcome": {"type": "string", "default": ""},
+                "lesson": {"type": "string"},
+                "reuse_when": {"type": "array", "items": {"type": "string"}, "default": []},
+                "avoid_when": {"type": "array", "items": {"type": "string"}, "default": []},
+                "side_effects": {"type": "array", "items": {"type": "string"}, "default": []},
+                "confidence": {"type": "number", "default": 0.8},
+                "source": {"type": "string", "default": "mcp-development-cycle"},
+                "meta": {"type": "object", "default": {}},
+            },
+            ["goal", "lesson"],
+        ),
+    },
     {"name": "omni_memory_session_ingest_turn", "description": "Append a turn to the in-process session buffer before session distillation.", "inputSchema": _object_schema({"role": {"type": "string"}, "content": {"type": "string"}}, ["role", "content"])},
     {"name": "omni_memory_session_commit", "description": "Distill buffered session turns into durable memory.", "inputSchema": _object_schema({"source": {"type": "string", "default": "mcp-session"}, "dry_run": {"type": "boolean", "default": False}, "min_confidence": {"type": "number", "default": 0.75}, "clear": {"type": "boolean", "default": True}, "meta": {"type": "object", "default": {}}})},
     {"name": "omni_memory_session_clear", "description": "Clear buffered session turns without writing memory.", "inputSchema": _object_schema({})},
@@ -353,6 +398,8 @@ def build_mcp_handlers(memory: OmniMemory) -> dict[str, Callable[..., Any]]:
         "omni_memory_search_failure_patterns": lambda **kwargs: {"failure_patterns": [pattern.model_dump(mode="json") for pattern in memory.repositories.failure_pattern.search(kwargs["query"], k=kwargs.get("k", 5))]},
         "omni_memory_consolidate_experiences": lambda **kwargs: memory.consolidate_experiences(dry_run=kwargs.get("dry_run", True), min_confidence=kwargs.get("min_confidence", 0.85)).model_dump(mode="json"),
         "omni_memory_record_agent_cycle": lambda **kwargs: memory.record_agent_cycle({"goal": kwargs["goal"], "plan": kwargs.get("plan") or [], "decisions": kwargs.get("decisions") or [], "actions": kwargs.get("actions") or [], "outcome": kwargs.get("outcome", ""), "tests": kwargs.get("tests") or [], "files": kwargs.get("files") or [], "side_effects": kwargs.get("side_effects") or [], "lesson": kwargs["lesson"], "reuse_when": kwargs.get("reuse_when") or [], "avoid_when": kwargs.get("avoid_when") or [], "confidence": kwargs.get("confidence", 0.8), "meta": kwargs.get("meta") or {}}, source=kwargs.get("source", "mcp-agent-cycle")).model_dump(),
+        "omni_memory_draft_development_cycle": lambda **kwargs: memory.draft_development_cycle(_development_cycle_payload(kwargs)).model_dump(mode="json"),
+        "omni_memory_record_development_cycle": lambda **kwargs: memory.record_development_cycle(_development_cycle_payload(kwargs), source=kwargs.get("source", "mcp-development-cycle")).model_dump(),
         "omni_memory_session_ingest_turn": lambda **kwargs: _session_ingest_turn(memory, role=kwargs["role"], content=kwargs["content"]),
         "omni_memory_session_commit": lambda **kwargs: memory.commit_session(source=kwargs.get("source", "mcp-session"), dry_run=kwargs.get("dry_run", False), meta=kwargs.get("meta") or {}, min_confidence=kwargs.get("min_confidence", 0.75), clear=kwargs.get("clear", True)).model_dump(),
         "omni_memory_session_clear": lambda **kwargs: _session_clear(memory),
@@ -409,6 +456,24 @@ def _saved_object(saved: list[Any], expected_type: type) -> Any | None:
         if isinstance(item, expected_type):
             return item
     return None
+
+
+def _development_cycle_payload(kwargs: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "goal": kwargs["goal"],
+        "summary": kwargs.get("summary", ""),
+        "changed_files": kwargs.get("changed_files") or [],
+        "commands_run": kwargs.get("commands_run") or [],
+        "tests": kwargs.get("tests") or [],
+        "decisions": kwargs.get("decisions") or [],
+        "outcome": kwargs.get("outcome", ""),
+        "lesson": kwargs.get("lesson", ""),
+        "reuse_when": kwargs.get("reuse_when") or [],
+        "avoid_when": kwargs.get("avoid_when") or [],
+        "side_effects": kwargs.get("side_effects") or [],
+        "confidence": kwargs.get("confidence", 0.8),
+        "meta": kwargs.get("meta") or {},
+    }
 
 
 def _session_ingest_turn(memory: OmniMemory, *, role: str, content: str) -> dict[str, Any]:
