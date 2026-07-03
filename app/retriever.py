@@ -462,7 +462,9 @@ def _memory_score(item: Any, domain_weights: dict[str, float], *, scope_filter: 
 
 
 def _retrieval_score_threshold(memory_type: str) -> float:
-    return _MIN_RETRIEVAL_SCORE
+    if _normalize_memory_type(memory_type) == "note":
+        return _MIN_RETRIEVAL_SCORE
+    return float("-inf")
 
 
 def _passes_scope_filter(item: Any, *, memory_type: str, scope_filter: RetrievalScopeFilter) -> bool:
