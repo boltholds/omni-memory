@@ -5,6 +5,7 @@ import json
 import pytest
 
 from app.builder import build_memory
+from app.development_cycle import DevelopmentCycleDraft
 from app.integrations.mcp import MCP_TOOL_SCHEMAS, build_mcp_handlers
 from app.mcp_server import build_mcp_app
 from domain.distiller import MemoryCandidate, SessionDistillationResult, SessionTurn
@@ -40,6 +41,25 @@ def _tool_text(response) -> dict:
     return json.loads(response[0].text)
 
 
+def test_development_cycle_draft_adapts_to_domain_neutral_agent_cycle():
+    cycle = DevelopmentCycleDraft(
+        goal="Generalize agent cycle",
+        summary="Moved dev fields into domain adapter.",
+        changed_files=["app/agent_cycle.py", "app/development_cycle.py"],
+        commands_run=["poetry run pytest tests/test_development_cycle.py -q"],
+        tests=["development cycle tests passed"],
+        lesson="Development-specific cycle data should be adapted into a generic agent cycle.",
+    ).to_agent_cycle()
+
+    assert cycle.domain == "development"
+    assert cycle.affected_resources == ["app/agent_cycle.py", "app/development_cycle.py"]
+    assert cycle.validation["tests"] == ["development cycle tests passed"]
+    assert cycle.validation["commands_run"] == ["poetry run pytest tests/test_development_cycle.py -q"]
+    assert cycle.refs["files"] == ["app/agent_cycle.py", "app/development_cycle.py"]
+    assert cycle.files == ["app/agent_cycle.py", "app/development_cycle.py"]
+    assert cycle.meta["domain"] == "development"
+
+
 def test_mcp_development_cycle_draft_does_not_write_memory():
     handlers = build_mcp_handlers(_memory())
 
@@ -54,6 +74,9 @@ def test_mcp_development_cycle_draft_does_not_write_memory():
     )
 
     assert draft["goal"] == "Wire development cycle recorder"
+    assert draft["domain"] == "development"
+    assert draft["affected_resources"] == ["app/development_cycle.py", "app/integrations/mcp.py"]
+    assert draft["validation"]["tests"] == ["development cycle tests passed"]
     assert "Ran command: poetry run pytest" in draft["actions"][1]
     assert draft["files"] == ["app/development_cycle.py", "app/integrations/mcp.py"]
     assert draft["meta"]["recorded_from"] == "development_cycle"
@@ -86,9 +109,12 @@ def test_mcp_development_cycle_record_writes_searchable_experience():
     )["experiences"]
     assert found[0]["goal"] == "Wire development cycle recorder"
     assert found[0]["refs"]["files"] == ["app/development_cycle.py", "app/integrations/mcp.py"]
+    assert found[0]["refs"]["affected_resources"] == ["app/development_cycle.py", "app/integrations/mcp.py"]
     assert "poetry run pytest -q" in found[0]["actions"][1]
     assert found[0]["evaluation"]["tests"] == ["83 passed"]
+    assert found[0]["evaluation"]["validation"]["commands_run"] == ["poetry run pytest -q"]
     assert found[0]["meta"]["recorded_from"] == "development_cycle"
+    assert found[0]["meta"]["domain"] == "development"
 
 
 def test_mcp_finish_development_task_records_experience_and_returns_distillation_review():
@@ -128,6 +154,8 @@ def test_mcp_finish_development_task_records_experience_and_returns_distillation
     )["experiences"]
     assert found[0]["goal"] == "Make development memory workflow automatic"
     assert found[0]["meta"]["recorded_from"] == "development_memory_workflow"
+    assert found[0]["meta"]["domain"] == "development"
+    assert found[0]["refs"]["affected_resources"] == ["app/development_memory_workflow.py", "app/integrations/mcp.py"]
 
 
 def test_mcp_schemas_and_fastmcp_include_development_cycle_tools():
