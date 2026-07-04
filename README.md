@@ -4,9 +4,57 @@ LLM agents forget, duplicate facts, and hallucinate over outdated memory. Omni M
 
 ## Start
 
+Install dependencies and run a local readiness check:
+
 ```bash
 poetry install
-poetry run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+poetry run omni-memory doctor
+```
+
+Run the FastAPI server:
+
+```bash
+poetry run omni-memory serve --host 127.0.0.1 --port 8000
+```
+
+Run the MCP stdio server for MCP clients:
+
+```bash
+poetry run omni-memory mcp
+```
+
+The older short CLI name is still available for local maintenance commands:
+
+```bash
+poetry run omem memory-path
+```
+
+### MCP client config
+
+For clients that accept a command/args MCP config, use:
+
+```json
+{
+  "mcpServers": {
+    "omni-memory": {
+      "command": "poetry",
+      "args": ["run", "omni-memory", "mcp"]
+    }
+  }
+}
+```
+
+After packaging/PyPI install, the command can be shortened to:
+
+```json
+{
+  "mcpServers": {
+    "omni-memory": {
+      "command": "omni-memory",
+      "args": ["mcp"]
+    }
+  }
+}
 ```
 
 ## Agent framework quickstart
