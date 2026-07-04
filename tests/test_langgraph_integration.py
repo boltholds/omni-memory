@@ -75,7 +75,7 @@ def test_langgraph_write_node_writes_policy_checked_items():
     )
 
     assert state["memory_write"]["saved"] == 1
-    assert memory.repository_stats()["notes"] == 1
+    assert memory.repository_stats()["vector_objects"] == 1
 
 
 def test_langgraph_finish_development_task_node_returns_decision_candidates():
