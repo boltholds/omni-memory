@@ -9,6 +9,55 @@ poetry install
 poetry run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
+## Agent framework quickstart
+
+### LangChain tools
+
+Install the optional integration group:
+
+```bash
+poetry install --with langchain
+```
+
+Connect OmniMemory to a LangChain-style agent in three lines:
+
+```python
+from app.builder import build_memory
+from app.integrations.langchain import create_omni_memory_tools
+
+tools = create_omni_memory_tools(build_memory())
+```
+
+The tool bundle includes:
+
+```text
+omni_memory_retrieve
+omni_memory_context
+omni_memory_write
+omni_memory_finish_development_task
+omni_memory_consolidate
+```
+
+### LangGraph nodes
+
+Use OmniMemory as graph state nodes without adding LangGraph as a core dependency:
+
+```python
+from app.builder import build_memory
+from app.integrations.langgraph import make_context_node
+
+context_node = make_context_node(build_memory())
+```
+
+The node reads `query`, `memory_intent` and optional `memory_scope` from state and writes a structured context pack back to `state["context"]`.
+
+Runnable examples:
+
+```text
+examples/langchain_tools.py
+examples/langgraph_agent_memory.py
+```
+
 ## Docs
 
 ```text
