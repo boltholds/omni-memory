@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError
+
+
+log = logging.getLogger("app.decision_auto_draft")
 
 
 class DecisionCandidate(BaseModel):
@@ -125,7 +129,17 @@ def _draft_with_model(request: Any, *, llm: Any | None) -> list[DecisionCandidat
         result = llm.generate(_decision_prompt(request), temperature=0.0)
         text = str(result.get("text", "") if isinstance(result, dict) else "")
         parsed = DecisionCandidateModelResponse.model_validate(_loads_json_object(text))
-    except Exception:
+    except Exception as exc:
+        log.warning(
+            "decision_auto_draft_model_failed",
+            exc_info=True,
+            extra={
+                "component": "decision_auto_draft",
+                "op": "draft_with_model",
+                "error_type": type(exc).__name__,
+                "fallback": "heuristics",
+            },
+        )
         return None
 
     if not parsed.decision_needed:

@@ -44,6 +44,7 @@ from app.writeback.memory_policies import (
     ConfidencePolicy,
     DedupPolicy,
 )
+from app.telemetry import span as telemetry_span
 
 
 class RepositoryNotFound(Exception):
@@ -262,6 +263,14 @@ class WriteBackService:
         self._repository_router = repository_router
 
     def write(self, request: WritebackRequest) -> WritebackResult:
+        with telemetry_span("writeback.write", item_count=len(request.items), source=request.source, dry_run=request.dry_run) as span:
+            result = self._write(request)
+            _set_span_attribute(span, "saved_count", result.saved_count)
+            _set_span_attribute(span, "rejected_count", result.rejected_count)
+            _set_span_attribute(span, "error_count", result.error_count)
+            return result
+
+    def _write(self, request: WritebackRequest) -> WritebackResult:
         result = WritebackResult()
 
         context = WritebackContext(
@@ -439,3 +448,8 @@ class WriteBackService:
     def write_raw(self, raw_items: list[dict[str, Any]]) -> WritebackResult:
         request = WritebackRequest.model_validate({"items": raw_items})
         return self.write(request)
+
+
+def _set_span_attribute(span: Any | None, key: str, value: Any) -> None:
+    if span is not None and hasattr(span, "set_attribute"):
+        span.set_attribute(key, value)

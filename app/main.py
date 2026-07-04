@@ -13,6 +13,7 @@ from app.builder import build_memory
 from app.admin import router as admin_router, attach_repos
 from app.logging import setup_logging
 from app.middlewares import tracing_middleware, RequestIdMiddleware, MetricsMiddleware
+from app.telemetry import setup_telemetry
 from app.ratelimit import RateLimitMiddleware
 from app.metrics import router as metrics_router
 from app.api_v1 import build_v1_router
@@ -74,6 +75,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title="omni-memory", version="0.1.0")
 
     setup_logging()
+    setup_telemetry()
     # TODO: CORS for future server
     
     app.add_middleware(RequestIdMiddleware)

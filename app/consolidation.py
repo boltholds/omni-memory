@@ -8,6 +8,7 @@ from typing import Any, Literal
 from domain.experience_evaluator import DomainExperienceEvaluator, EvaluationResult, ExperienceEvaluator
 from domain.models import ExperienceRecord, FailurePatternRecord, Provenance, SkillRecord
 from domain.writeback import stable_id
+from app.telemetry import span as telemetry_span
 
 ConsolidationKind = Literal["skill", "failure_pattern"]
 
@@ -59,48 +60,51 @@ class ExperienceConsolidator:
         self.evaluator = evaluator or DomainExperienceEvaluator()
 
     def consolidate(self, *, dry_run: bool = True, min_confidence: float = 0.85) -> ConsolidationResult:
-        experiences = [
-            item
-            for item in self.experience_repo.list_experiences()
-            if item.confidence >= min_confidence and _eligible_for_consolidation(item)
-        ]
-        evaluations = {item.id: self.evaluator.evaluate(item) for item in experiences}
-        proposals = [
-            *self._skill_proposals(experiences, evaluations),
-            *self._failure_pattern_proposals(experiences, evaluations),
-        ]
+        with telemetry_span("consolidation.experiences", dry_run=dry_run, min_confidence=min_confidence) as span:
+            experiences = [
+                item
+                for item in self.experience_repo.list_experiences()
+                if item.confidence >= min_confidence and _eligible_for_consolidation(item)
+            ]
+            evaluations = {item.id: self.evaluator.evaluate(item) for item in experiences}
+            proposals = [
+                *self._skill_proposals(experiences, evaluations),
+                *self._failure_pattern_proposals(experiences, evaluations),
+            ]
+            _set_span_attribute(span, "experience_count", len(experiences))
+            _set_span_attribute(span, "proposal_count", len(proposals))
 
-        if dry_run:
-            return ConsolidationResult(dry_run=True, proposals=proposals)
+            if dry_run:
+                return ConsolidationResult(dry_run=True, proposals=proposals)
 
-        saved_skills: list[SkillRecord] = []
-        saved_failure_patterns: list[FailurePatternRecord] = []
-        now = time.time()
+            saved_skills: list[SkillRecord] = []
+            saved_failure_patterns: list[FailurePatternRecord] = []
+            now = time.time()
 
-        for proposal in proposals:
-            if proposal.kind == "skill":
-                skill = SkillRecord(
-                    id=stable_id("skill", proposal.payload),
-                    provenance=Provenance(source="consolidation", time=now),
-                    **proposal.payload,
-                )
-                self.skill_repo.save_skill(skill)
-                saved_skills.append(skill)
-            elif proposal.kind == "failure_pattern":
-                pattern = FailurePatternRecord(
-                    id=stable_id("failure_pattern", proposal.payload),
-                    provenance=Provenance(source="consolidation", time=now),
-                    **proposal.payload,
-                )
-                self.failure_pattern_repo.save_failure_pattern(pattern)
-                saved_failure_patterns.append(pattern)
+            for proposal in proposals:
+                if proposal.kind == "skill":
+                    skill = SkillRecord(
+                        id=stable_id("skill", proposal.payload),
+                        provenance=Provenance(source="consolidation", time=now),
+                        **proposal.payload,
+                    )
+                    self.skill_repo.save_skill(skill)
+                    saved_skills.append(skill)
+                elif proposal.kind == "failure_pattern":
+                    pattern = FailurePatternRecord(
+                        id=stable_id("failure_pattern", proposal.payload),
+                        provenance=Provenance(source="consolidation", time=now),
+                        **proposal.payload,
+                    )
+                    self.failure_pattern_repo.save_failure_pattern(pattern)
+                    saved_failure_patterns.append(pattern)
 
-        return ConsolidationResult(
-            dry_run=False,
-            proposals=proposals,
-            saved_skills=saved_skills,
-            saved_failure_patterns=saved_failure_patterns,
-        )
+            return ConsolidationResult(
+                dry_run=False,
+                proposals=proposals,
+                saved_skills=saved_skills,
+                saved_failure_patterns=saved_failure_patterns,
+            )
 
     def _skill_proposals(self, experiences: list[ExperienceRecord], evaluations: dict[str, EvaluationResult]) -> list[ConsolidationProposal]:
         buckets: dict[str, list[ExperienceRecord]] = {}
@@ -205,6 +209,11 @@ def _proposal_to_dict(item: ConsolidationProposal) -> dict[str, Any]:
         "confidence": item.confidence,
         "payload": item.payload,
     }
+
+
+def _set_span_attribute(span: Any | None, key: str, value: Any) -> None:
+    if span is not None and hasattr(span, "set_attribute"):
+        span.set_attribute(key, value)
 
 
 def _eligible_for_consolidation(item: ExperienceRecord) -> bool:

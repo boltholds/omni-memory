@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import Any, Literal, Protocol
 
@@ -9,6 +10,9 @@ from pydantic import BaseModel, Field
 from domain.distiller import MemoryCandidate
 from domain.llm import ILLMProvider, Msg
 from domain.writeback import WritebackRawItem, WritebackRequest, WritebackResult, stable_id
+
+
+log = logging.getLogger("app.fact_mining")
 
 
 FactCandidateStatus = Literal[
@@ -380,7 +384,17 @@ def _parse_json_object(text: str) -> dict[str, Any]:
         raw = re.sub(r"\s*```$", "", raw)
     try:
         data = json.loads(raw)
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as exc:
+        log.debug(
+            "fact_mining_json_parse_fallback",
+            extra={
+                "component": "fact_mining",
+                "op": "parse_json_object",
+                "error_type": type(exc).__name__,
+                "fallback": "extract_json_object",
+                "text_length": len(raw),
+            },
+        )
         match = re.search(r"\{.*\}", raw, flags=re.DOTALL)
         if not match:
             raise

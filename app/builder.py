@@ -13,6 +13,7 @@ from infra.repo.decision_repo import DecisionRepo
 from infra.repo.experience_repo import ExperienceRepo
 from infra.repo.cognitive_repo import FailurePatternRepo, SkillRepo
 from infra.repo.review_repo import ReviewQueueRepo
+from infra.rerankers import build_reranker
 
 
 def build_memory(
@@ -51,12 +52,23 @@ def build_memory(
     Advanced/tests/CLI:
         build_memory(vector_repo=..., graph_repo=..., episodic_repo=...)
     """
+    selected_bundle = model_bundle
+    if selected_bundle is None:
+        selected_bundle = ModelBundle(reranker=build_reranker())
+    elif selected_bundle.reranker is None:
+        selected_bundle = ModelBundle(
+            llm=selected_bundle.llm,
+            embedder=selected_bundle.embedder,
+            reranker=build_reranker(),
+            distiller=selected_bundle.distiller,
+        )
+
     return OmniMemory(
         use_llm=use_llm,
         reject_conflicts=reject_conflicts,
         llm=llm,
         embedder=embedder,
-        model_bundle=model_bundle,
+        model_bundle=selected_bundle,
         distiller=distiller,
         vector_repo=vector_repo,
         graph_repo=graph_repo,

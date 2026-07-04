@@ -2,10 +2,12 @@ from __future__ import annotations
 from typing import List, Literal, Optional, Dict, Any
 from domain.llm import Msg
 from app.config import settings
+import logging
 import os
 
 Lang = Literal["en","ru"]
 Style = Literal["concise","bullets","detailed"]
+log = logging.getLogger("app.prompting")
 
 # Фолбэк (как раньше), если нет Jinja или шаблонов
 SYSTEM_FALLBACK = """You are a precise assistant. Use ONLY the provided context.
@@ -42,7 +44,18 @@ class PromptRenderer:
                     lstrip_blocks=True,
                     undefined=StrictUndefined,  # пусть падает, если переменная не определена
                 )
-        except Exception:
+        except Exception as exc:
+            log.warning(
+                "prompt_template_environment_unavailable",
+                exc_info=True,
+                extra={
+                    "component": "PromptRenderer",
+                    "op": "init_jinja_environment",
+                    "template_dir": self.template_dir,
+                    "error_type": type(exc).__name__,
+                    "fallback": "builtin_prompt",
+                },
+            )
             self._jinja_env = None  # фолбэк
 
     def make_messages(
@@ -87,8 +100,20 @@ class PromptRenderer:
                 user_text = usr_t.render(**values).strip()
                 return [{"role":"system","content": system_text},
                         {"role":"user","content": user_text}]
-            except Exception:
-                pass  # на любой сбой — фолбэк
+            except Exception as exc:
+                log.warning(
+                    "prompt_template_render_failed",
+                    exc_info=True,
+                    extra={
+                        "component": "PromptRenderer",
+                        "op": "render_jinja_prompt",
+                        "template_dir": self.template_dir,
+                        "system_template": self.system_template,
+                        "user_template": self.user_template,
+                        "error_type": type(exc).__name__,
+                        "fallback": "builtin_prompt",
+                    },
+                )
 
         # ---- ФОЛБЭК ----
         system_text = _system_text(context_sections, extra=extra)

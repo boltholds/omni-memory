@@ -29,12 +29,49 @@ class JsonFormatter(logging.Formatter):
             v = getattr(record, f, None)
             if v is not None:
                 payload[f] = v
+        for key, value in _structured_extra(record).items():
+            if key not in payload:
+                payload[key] = value
         if record.exc_info:
             payload["exc"] = self.formatException(record.exc_info)
-        line = json.dumps(payload, ensure_ascii=False)
+        line = json.dumps(payload, ensure_ascii=False, default=str)
         if settings.trace_redact:
             line = _redact(line)
         return line
+
+
+_LOG_RECORD_RESERVED = {
+    "args",
+    "asctime",
+    "created",
+    "exc_info",
+    "exc_text",
+    "filename",
+    "funcName",
+    "levelname",
+    "levelno",
+    "lineno",
+    "module",
+    "msecs",
+    "message",
+    "msg",
+    "name",
+    "pathname",
+    "process",
+    "processName",
+    "relativeCreated",
+    "stack_info",
+    "thread",
+    "threadName",
+}
+
+
+def _structured_extra(record: logging.LogRecord) -> Dict[str, Any]:
+    return {
+        key: value
+        for key, value in record.__dict__.items()
+        if key not in _LOG_RECORD_RESERVED and not key.startswith("_")
+    }
 
 def setup_logging() -> None:
     root = logging.getLogger()

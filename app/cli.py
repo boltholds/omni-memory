@@ -4,7 +4,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 import typer
@@ -12,12 +12,12 @@ import typer
 from app.builder import build_memory
 from infra.llm.llm_factory import LLMConfig, build_llm
 from infra.embeddings.factory import build_embedder
-from infra.embeddings.factory import build_embedder
 
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
 DEFAULT_URL = "http://127.0.0.1:8000"
+OutputFormat = Literal["text", "json"]
 
 def _svc():
     return _local_memory(
@@ -40,7 +40,28 @@ def _safe_name(value: str | None) -> str:
     )
 
 
-def _print_report(prefix: str, rep: Any) -> None:
+def _jsonable(value: Any) -> Any:
+    if hasattr(value, "model_dump"):
+        return value.model_dump(mode="json")
+    if hasattr(value, "__dict__"):
+        return value.__dict__
+    return value
+
+
+def _emit_json(payload: Any) -> None:
+    typer.echo(json.dumps(_jsonable(payload), ensure_ascii=False, indent=2))
+
+
+def _normalize_output(output: str, *, out_json: bool = False) -> OutputFormat:
+    if out_json:
+        return "json"
+    normalized = output.strip().lower()
+    if normalized not in {"text", "json"}:
+        raise typer.BadParameter("Expected output to be one of: text, json")
+    return normalized  # type: ignore[return-value]
+
+
+def _report_payload(prefix: str, rep: Any) -> dict[str, Any]:
     saved = getattr(rep, "saved", None)
     rejected = getattr(rep, "rejected", None)
     reasons = getattr(rep, "reasons", None)
@@ -49,6 +70,24 @@ def _print_report(prefix: str, rep: Any) -> None:
         saved = rep.get("saved")
         rejected = rep.get("rejected")
         reasons = rep.get("reasons")
+
+    return {
+        "kind": prefix,
+        "saved": saved,
+        "rejected": rejected,
+        "reasons": list(reasons or []),
+    }
+
+
+def _print_report(prefix: str, rep: Any, *, output: OutputFormat = "text") -> None:
+    payload = _report_payload(prefix, rep)
+    if output == "json":
+        _emit_json(payload)
+        return
+
+    saved = payload["saved"]
+    rejected = payload["rejected"]
+    reasons = payload["reasons"]
 
     typer.echo(f"{prefix}: saved={saved} rejected={rejected}")
 
@@ -294,16 +333,20 @@ def _build_cli_embedder(
 
 
 @app.command("load-facts")
-def load_facts(path: Path = typer.Argument(..., exists=True, readable=True)):
+def load_facts(
+    path: Path = typer.Argument(..., exists=True, readable=True),
+    output: str = typer.Option("text", "--output", "-o", help="Output format: text or json."),
+):
     """Локально загрузить facts JSON через WriteBackService."""
     items = _load_json_list(path)
     rep = _svc().write_items(items)
-    _print_report("facts", rep)
+    _print_report("facts", rep, output=_normalize_output(output))
 
 
 @app.command("load-notes")
 def load_notes(
     path: Path = typer.Argument(..., exists=True, readable=True),
+    output: str = typer.Option("text", "--output", "-o", help="Output format: text or json."),
     embedding_provider: str = typer.Option(
         "hash",
         "--embedding-provider",
@@ -331,15 +374,18 @@ def load_notes(
     )
 
     rep = memory.write_items(items)
-    _print_report("notes", rep)
+    _print_report("notes", rep, output=_normalize_output(output))
 
 
 @app.command("load-episodes")
-def load_episodes(path: Path = typer.Argument(..., exists=True, readable=True)):
+def load_episodes(
+    path: Path = typer.Argument(..., exists=True, readable=True),
+    output: str = typer.Option("text", "--output", "-o", help="Output format: text or json."),
+):
     """Локально загрузить episodes JSON через WriteBackService."""
     items = _load_json_list(path)
     rep = _svc().write_items(items)
-    _print_report("episodes", rep)
+    _print_report("episodes", rep, output=_normalize_output(output))
 
 
 
@@ -348,10 +394,11 @@ def load_episodes(path: Path = typer.Argument(..., exists=True, readable=True)):
 def write_note(
     text: str = typer.Argument(...),
     source: str = typer.Option("cli"),
+    output: str = typer.Option("text", "--output", "-o", help="Output format: text or json."),
 ):
     """Локально сохранить заметку через центральный OmniMemory facade."""
     rep = _svc().write_note(text, source=source)
-    _print_report("note", rep)
+    _print_report("note", rep, output=_normalize_output(output))
 
 
 @app.command("retrieve")
@@ -359,6 +406,7 @@ def retrieve_cmd(
     query: str = typer.Argument(...),
     k: int = typer.Option(5, "--k"),
     out_json: bool = typer.Option(False, "--json"),
+    output: str = typer.Option("text", "--output", "-o", help="Output format: text or json."),
     embedding_provider: str = typer.Option(
         "hash",
         "--embedding-provider",
@@ -383,9 +431,10 @@ def retrieve_cmd(
     )
 
     bundle = memory.retrieve(query, k_sem=k)
+    selected_output = _normalize_output(output, out_json=out_json)
 
-    if out_json:
-        typer.echo(json.dumps(bundle.model_dump(mode="json"), ensure_ascii=False, indent=2))
+    if selected_output == "json":
+        _emit_json(bundle)
         return
 
     typer.echo(bundle)
@@ -432,6 +481,7 @@ def ask_cmd(
     lang: str = typer.Option("en"),
     style: str = typer.Option("concise"),
     out_json: bool = typer.Option(False, "--json"),
+    output: str = typer.Option("text", "--output", "-o", help="Output format: text or json."),
 ):
     """Локально задать вопрос через OmniMemory с optional BYO-LLM/BYO-Embedder."""
 
@@ -506,8 +556,9 @@ def ask_cmd(
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1) from exc
 
-    if out_json:
-        typer.echo(json.dumps(answer.__dict__, ensure_ascii=False, indent=2))
+    selected_output = _normalize_output(output, out_json=out_json)
+    if selected_output == "json":
+        _emit_json(answer)
         return
 
     typer.echo(answer.answer)
@@ -522,6 +573,7 @@ def ask_cmd(
 def export_cmd(
     out: Path = typer.Argument(..., writable=True),
     url: str = typer.Option(DEFAULT_URL, help="Base URL of running service"),
+    output: str = typer.Option("text", "--output", "-o", help="Output format: text or json."),
 ):
     """Экспорт памяти из запущенного сервера /admin/export в JSON файл."""
     with httpx.Client(timeout=30.0) as client:
@@ -530,6 +582,9 @@ def export_cmd(
         data = r.json()
 
     out.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    if _normalize_output(output) == "json":
+        _emit_json({"status": "ok", "path": str(out), "url": url})
+        return
     typer.echo(f"exported -> {out}")
 
 
@@ -537,6 +592,7 @@ def export_cmd(
 def import_cmd(
     inp: Path = typer.Argument(..., exists=True, readable=True),
     url: str = typer.Option(DEFAULT_URL, help="Base URL of running service"),
+    output: str = typer.Option("text", "--output", "-o", help="Output format: text or json."),
 ):
     """Импорт памяти в запущенный сервер через /admin/import."""
     archive = json.loads(inp.read_text(encoding="utf-8"))
@@ -546,18 +602,22 @@ def import_cmd(
         r.raise_for_status()
         rep = r.json()
 
-    _print_report("import", rep)
+    _print_report("import", rep, output=_normalize_output(output))
 
 
 @app.command("vector-save")
 def vector_save_cmd(
     dir: Path = typer.Argument(...),
     url: str = typer.Option(DEFAULT_URL, help="Base URL of running service"),
+    output: str = typer.Option("text", "--output", "-o", help="Output format: text or json."),
 ):
     with httpx.Client(timeout=30.0) as client:
         r = client.post(f"{url}/admin/vector/save", json={"dir": str(dir)})
         r.raise_for_status()
 
+    if _normalize_output(output) == "json":
+        _emit_json({"status": "ok", "action": "vector-save", "dir": str(dir), "url": url})
+        return
     typer.echo(f"vector saved -> {dir}")
 
 
@@ -565,11 +625,15 @@ def vector_save_cmd(
 def vector_load_cmd(
     dir: Path = typer.Argument(...),
     url: str = typer.Option(DEFAULT_URL, help="Base URL of running service"),
+    output: str = typer.Option("text", "--output", "-o", help="Output format: text or json."),
 ):
     with httpx.Client(timeout=30.0) as client:
         r = client.post(f"{url}/admin/vector/load", json={"dir": str(dir)})
         r.raise_for_status()
 
+    if _normalize_output(output) == "json":
+        _emit_json({"status": "ok", "action": "vector-load", "dir": str(dir), "url": url})
+        return
     typer.echo(f"vector loaded <- {dir}")
 
 
@@ -607,6 +671,7 @@ def llm_check_cmd(
     llm_base_url: str = typer.Option("http://localhost:11434/v1"),
     llm_model: str = typer.Option("gemma3:1b"),
     llm_api_key: str = typer.Option("local"),
+    output: str = typer.Option("text", "--output", "-o", help="Output format: text or json."),
 ):
     """Проверить подключение к BYO-LLM провайдеру."""
     from infra.llm.llm_openai_compatible import OpenAICompatibleLLM
@@ -629,6 +694,9 @@ def llm_check_cmd(
     except Exception as exc:
         _friendly_llm_error(exc, llm_base_url)
 
+    if _normalize_output(output) == "json":
+        _emit_json({"status": "ok", "model": result.get("model"), "text": result.get("text", "").strip()})
+        return
     typer.echo("LLM provider: ok")
     typer.echo(f"model: {result.get('model')}")
     typer.echo(f"text: {result.get('text', '').strip()}")
@@ -638,6 +706,7 @@ def llm_check_cmd(
 def memory_path_cmd(
     embedding_provider: str = typer.Option("hash", "--embedding-provider"),
     embedding_model: str | None = typer.Option(None, "--embedding-model"),
+    output: str = typer.Option("text", "--output", "-o", help="Output format: text or json."),
 ):
     provider = "hash" if embedding_provider in {"hash", "auto"} else embedding_provider
     model = "hash" if provider == "hash" else embedding_model or "default"
@@ -649,8 +718,12 @@ def memory_path_cmd(
         / _safe_name(model)
     )
 
-    typer.echo(f"facts:  {Path('.omni-memory') / 'facts.json'}")
-    typer.echo(f"vector: {vector_dir}")
+    payload = {"facts": str(Path(".omni-memory") / "facts.json"), "vector": str(vector_dir)}
+    if _normalize_output(output) == "json":
+        _emit_json(payload)
+        return
+    typer.echo(f"facts:  {payload['facts']}")
+    typer.echo(f"vector: {payload['vector']}")
 
 
 @app.command("mcp")

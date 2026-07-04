@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from app.memory_planner import MemoryPlanner
-from app.retriever import Retriever, RetrievalScopeFilter, _deduplicate_retrieval_bundle, _intent_type_priority_scores
+from app.retriever import Retriever, RetrievalScopeFilter, _MAX_GRAPH_FALLBACK_QUERY_CALLS, _deduplicate_retrieval_bundle, _intent_type_priority_scores
+from app.stats import stats
 from domain.models import ExperienceRecord, Fact, MemoryObject, Provenance, RetrievalBundle
 from infra.embeddings.factory import HashEmbedder
 from infra.repo.episodic_repo import EpisodicRepo
@@ -38,6 +39,25 @@ class CountingGraphRepo(GraphRepo):
         return super().query_entity_neighborhood(entities, include_incoming=include_incoming, include_outgoing=include_outgoing)
 
 
+class FallbackOnlyGraphRepo:
+    def __init__(self) -> None:
+        self.facts: list[Fact] = []
+        self.query_calls = 0
+
+    def save_fact(self, item: Fact) -> None:
+        self.facts.append(item)
+
+    def query(self, **query_spec):
+        self.query_calls += 1
+        subject = query_spec.get("subject")
+        object_ = query_spec.get("object")
+        return [
+            item
+            for item in self.facts
+            if (subject is None or item.subject == subject) and (object_ is None or item.object == object_)
+        ]
+
+
 def test_retriever_graph_expansion_uses_batched_neighborhood_queries():
     graph = CountingGraphRepo()
     graph.save_fact(fact("f1", "omnimemory", "fastmcp"))
@@ -51,6 +71,18 @@ def test_retriever_graph_expansion_uses_batched_neighborhood_queries():
     assert {item.id for item in facts} >= {"f1", "f2"}
     assert graph.neighborhood_calls <= 2
     assert graph.query_calls == 0
+
+
+def test_retriever_graph_fallback_has_hard_query_cap():
+    graph = FallbackOnlyGraphRepo()
+    for idx in range(300):
+        graph.save_fact(fact(f"f-{idx}", f"entity-{idx}", f"next-{idx}"))
+
+    retriever = Retriever(VectorStoreRepo(embedder=HashEmbedder()), graph, EpisodicRepo())
+    facts = retriever._expand_graph_two_hop([f"entity-{idx}" for idx in range(300)])
+
+    assert graph.query_calls <= _MAX_GRAPH_FALLBACK_QUERY_CALLS
+    assert len(facts) <= _MAX_GRAPH_FALLBACK_QUERY_CALLS
 
 
 def test_retriever_rank_top_k_keeps_expected_ordering():
@@ -72,6 +104,33 @@ def test_retriever_rank_top_k_keeps_expected_ordering():
     )
 
     assert [item.id for item in ranked] == ["new", "old"]
+
+
+def test_retriever_rank_large_synthetic_corpus_uses_fingerprint_cache():
+    retriever = Retriever(VectorStoreRepo(embedder=HashEmbedder()), GraphRepo(), EpisodicRepo())
+    before = stats.snapshot()["counters"].get("retriever.fingerprint_cache_hits", 0)
+    items = [
+        note(
+            f"note-{idx}",
+            f"Repeated operational lesson {idx % 100}: keep MCP registry and handlers aligned",
+            scope={"domain_ids": ["domain:project:omni-memory"], "durability": "durable"},
+            time=float(idx),
+        )
+        for idx in range(2000)
+    ]
+
+    ranked = retriever._rank_memory_items(
+        "MCP registry handlers aligned",
+        items,
+        {"domain:project:omni-memory": 4.0},
+        RetrievalScopeFilter(domain_ids=["domain:project:omni-memory"]),
+        memory_type="note",
+        limit=20,
+    )
+    after = stats.snapshot()["counters"].get("retriever.fingerprint_cache_hits", 0)
+
+    assert len(ranked) == 20
+    assert after > before
 
 
 def test_retriever_deduplicates_notes_by_content_and_keeps_scoped_copy():

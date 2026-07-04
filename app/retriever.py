@@ -9,15 +9,18 @@ from app.entities import build_entity_stack
 from app.memory_planner import MemoryPlanner
 from app.profiling import timed
 from app.stats import stats
+from app.telemetry import span as telemetry_span
 from domain.model_ports import IReranker
 from domain.models import DecisionRecord, Episode, ExperienceRecord, Fact, MemoryObject, RetrievalBundle, SkillRecord
 from domain.models import FailurePatternRecord as PatternRecord
 from domain.ports import IDecisionRepository, IEpisodicRepository, IExperienceRepository, IGraphRepository, IMemoryReadRepository, IRetriever, ISkillRepository
 from domain.ports import IFailurePatternRepository as PatternRepository
 from infra.consistency import build_fact_beliefs
+from infra.rerankers.factory import reranker_candidate_budget
 
 _MAX_GRAPH_FRONTIER = 64
 _MAX_GRAPH_FACTS = 512
+_MAX_GRAPH_FALLBACK_QUERY_CALLS = 128
 _RERANK_POOL_MULTIPLIER = 4
 _RERANK_POOL_MIN = 16
 _UNSCOPED_DURABLE_PENALTY = 1.25
@@ -66,6 +69,12 @@ class RetrievalScopeFilter:
             strict_domains=bool(raw.get("strict_domains", False)),
             expand_domains=bool(raw.get("expand_domains", True)),
         )
+
+
+@dataclass
+class _GraphExpansionState:
+    fallback_query_calls: int = 0
+    fallback_truncated: bool = False
 
 
 def _simple_entities(query: str) -> List[str]:
@@ -144,18 +153,37 @@ class Retriever(IRetriever):
         self._extractor, self._linker = build_entity_stack(settings.ner_backend, settings.entity_aliases)
         self._planner = MemoryPlanner()
 
-    def _query_graph_entities(self, entities: list[str], facts: list[Fact], seen_ids: set[str]) -> list[Fact]:
+    def _query_graph_entities(
+        self,
+        entities: list[str],
+        facts: list[Fact],
+        seen_ids: set[str],
+        state: _GraphExpansionState,
+    ) -> list[Fact]:
         found: list[Fact] = []
         if not entities:
             return found
 
         if hasattr(self._graph, "query_entity_neighborhood"):
+            stats.inc("retriever.graph_neighborhood_calls")
             candidates = self._graph.query_entity_neighborhood(entities)  # type: ignore[attr-defined]
         else:
             candidates = []
+            before_calls = state.fallback_query_calls
             for entity in entities:
+                if state.fallback_query_calls >= _MAX_GRAPH_FALLBACK_QUERY_CALLS:
+                    state.fallback_truncated = True
+                    break
                 candidates.extend(self._graph.query(subject=entity))
+                state.fallback_query_calls += 1
+                if state.fallback_query_calls >= _MAX_GRAPH_FALLBACK_QUERY_CALLS:
+                    state.fallback_truncated = True
+                    break
                 candidates.extend(self._graph.query(object=entity))
+                state.fallback_query_calls += 1
+            stats.inc("retriever.graph_fallback_query_calls", state.fallback_query_calls - before_calls)
+            if state.fallback_truncated:
+                stats.inc("retriever.graph_fallback_truncated")
 
         for fact in candidates:
             if _add_fact(fact, facts, seen_ids):
@@ -168,14 +196,17 @@ class Retriever(IRetriever):
         facts: list[Fact] = []
         seen_ids: set[str] = set()
         seen_entities: set[str] = set()
+        state = _GraphExpansionState()
         frontier = _bounded_unique(seed_entities, limit=_MAX_GRAPH_FRONTIER)
 
         for _hop in range(2):
             variants = _entity_variants_for_frontier(frontier, seen_entities, limit=_MAX_GRAPH_FRONTIER)
             if not variants:
                 break
-            found = self._query_graph_entities(variants, facts, seen_ids)
+            found = self._query_graph_entities(variants, facts, seen_ids, state)
             if not found or len(facts) >= _MAX_GRAPH_FACTS:
+                break
+            if state.fallback_truncated:
                 break
             frontier = _next_graph_frontier(found, seen_entities, limit=_MAX_GRAPH_FRONTIER)
         return facts
@@ -190,7 +221,9 @@ class Retriever(IRetriever):
         mode: str | None = None,
         scope: dict[str, Any] | None = None,
     ) -> RetrievalBundle:
+        stats.inc("retriever.retrieve_calls")
         profile = self._planner.profile(intent, mode=mode)
+        rerank_budget = reranker_candidate_budget(mode or intent)
         priority_scores = _intent_type_priority_scores(profile)
         raw_ents = self._extractor.extract(query)
         linked_ents = self._linker.link_all(raw_ents)
@@ -209,6 +242,7 @@ class Retriever(IRetriever):
                 memory_type="note",
                 limit=k_sem,
                 type_priority=priority_scores.get("note", 0.0),
+                rerank_budget=rerank_budget,
             )
             stop_vec()
 
@@ -222,6 +256,7 @@ class Retriever(IRetriever):
                 scope_filter,
                 memory_type="fact",
                 type_priority=priority_scores.get("fact", 0.0),
+                rerank_budget=rerank_budget,
             )
             stop_kg()
 
@@ -236,6 +271,7 @@ class Retriever(IRetriever):
                 memory_type="episode",
                 limit=k_eps,
                 type_priority=priority_scores.get("episode", 0.0),
+                rerank_budget=rerank_budget,
             )
             stop_ep()
 
@@ -249,6 +285,7 @@ class Retriever(IRetriever):
                 memory_type="decision",
                 limit=k_eps,
                 type_priority=priority_scores.get("decision", 0.0),
+                rerank_budget=rerank_budget,
             )
 
         experiences: List[ExperienceRecord] = []
@@ -261,6 +298,7 @@ class Retriever(IRetriever):
                 memory_type="experience",
                 limit=k_eps,
                 type_priority=priority_scores.get("experience", 0.0),
+                rerank_budget=rerank_budget,
             )
 
         skills: List[SkillRecord] = []
@@ -273,6 +311,7 @@ class Retriever(IRetriever):
                 memory_type="skill",
                 limit=k_eps,
                 type_priority=priority_scores.get("skill", 0.0),
+                rerank_budget=rerank_budget,
             )
 
         patterns: List[PatternRecord] = []
@@ -285,6 +324,7 @@ class Retriever(IRetriever):
                 memory_type="failure_pattern",
                 limit=k_eps,
                 type_priority=priority_scores.get("failure_pattern", 0.0),
+                rerank_budget=rerank_budget,
             )
 
         facts = _deduplicate_items(facts, memory_type="fact")
@@ -312,7 +352,10 @@ class Retriever(IRetriever):
         memory_type: str,
         limit: int | None = None,
         type_priority: float = 0.0,
+        rerank_budget: int | None = None,
     ) -> list[Any]:
+        stop_rank = stats.timeit(f"retriever.rank.{memory_type}_ms")
+        fingerprint_cache: dict[tuple[str, int], str] = {}
         scored: list[tuple[tuple[float, float, float, int], Any]] = []
         for idx, item in enumerate(items):
             if not _passes_scope_filter(item, memory_type=memory_type, scope_filter=scope_filter):
@@ -321,13 +364,25 @@ class Retriever(IRetriever):
             if score < _retrieval_score_threshold(memory_type):
                 continue
             scored.append(((score + type_priority, score, _memory_time(item), -idx), item))
+        stats.inc(f"retriever.rank.{memory_type}.input", len(items))
+        stats.inc(f"retriever.rank.{memory_type}.scored", len(scored))
 
         if not scored:
+            stop_rank()
             return []
 
-        deduped = _deduplicate_scored_items(scored, memory_type=memory_type)
-        pre_ranked = _top_scored_items(deduped, limit=_rerank_pool_size(limit))
-        reranked = _deduplicate_items(self._rerank(query, pre_ranked), memory_type=memory_type)
+        deduped = _deduplicate_scored_items(scored, memory_type=memory_type, fingerprint_cache=fingerprint_cache)
+        stats.inc(f"retriever.rank.{memory_type}.dedup_dropped", len(scored) - len(deduped))
+        pre_ranked = _top_scored_items(deduped, limit=_rerank_pool_size(limit, budget=rerank_budget))
+        reranked = _deduplicate_items(self._rerank(query, pre_ranked), memory_type=memory_type, fingerprint_cache=fingerprint_cache)
+        if limit is not None and len(reranked) < limit:
+            reranked = _fill_from_pre_ranked(
+                reranked,
+                _top_scored_items(deduped, limit=limit),
+                memory_type=memory_type,
+                fingerprint_cache=fingerprint_cache,
+            )
+        stop_rank()
         if limit is not None:
             return reranked[: max(limit, 0)]
         return reranked
@@ -335,18 +390,36 @@ class Retriever(IRetriever):
     def _rerank(self, query: str, items: list[Any]) -> list[Any]:
         if self._reranker is None or len(items) <= 1:
             return items
-        try:
-            reranked = list(self._reranker.rerank(query, items))
-        except Exception:
-            return items
-        return _valid_reranked_items(reranked, items)
+        stats.inc("retriever.reranker_calls")
+        stats.inc("retriever.reranker_items", len(items))
+        stop_rerank = stats.timeit("retriever.reranker_ms")
+        with telemetry_span("retriever.rerank", item_count=len(items), reranker=type(self._reranker).__name__) as span:
+            try:
+                reranked = list(self._reranker.rerank(query, items))
+            except Exception:
+                stats.inc("retriever.reranker_fallback_count")
+                if span is not None and hasattr(span, "set_attribute"):
+                    span.set_attribute("fallback", True)
+                stop_rerank()
+                return items
+            stop_rerank()
+            valid = _valid_reranked_items(reranked, items)
+            if span is not None and hasattr(span, "set_attribute"):
+                span.set_attribute("fallback", False)
+                span.set_attribute("result_count", len(valid))
+            return valid
 
 
-def _deduplicate_scored_items(scored: list[tuple[tuple[float, ...], Any]], *, memory_type: str) -> list[tuple[tuple[float, ...], Any]]:
+def _deduplicate_scored_items(
+    scored: list[tuple[tuple[float, ...], Any]],
+    *,
+    memory_type: str,
+    fingerprint_cache: dict[tuple[str, int], str] | None = None,
+) -> list[tuple[tuple[float, ...], Any]]:
     out: list[tuple[tuple[float, ...], Any]] = []
     seen: set[str] = set()
     for score, item in sorted(scored, key=lambda pair: pair[0], reverse=True):
-        keys = _dedup_keys(item, memory_type=memory_type)
+        keys = _dedup_keys(item, memory_type=memory_type, fingerprint_cache=fingerprint_cache)
         if keys and seen.intersection(keys):
             continue
         seen.update(keys)
@@ -354,11 +427,16 @@ def _deduplicate_scored_items(scored: list[tuple[tuple[float, ...], Any]], *, me
     return out
 
 
-def _deduplicate_items(items: list[Any], *, memory_type: str) -> list[Any]:
+def _deduplicate_items(
+    items: list[Any],
+    *,
+    memory_type: str,
+    fingerprint_cache: dict[tuple[str, int], str] | None = None,
+) -> list[Any]:
     out: list[Any] = []
     seen: set[str] = set()
     for item in items:
-        keys = _dedup_keys(item, memory_type=memory_type)
+        keys = _dedup_keys(item, memory_type=memory_type, fingerprint_cache=fingerprint_cache)
         if keys and seen.intersection(keys):
             continue
         seen.update(keys)
@@ -368,12 +446,13 @@ def _deduplicate_items(items: list[Any], *, memory_type: str) -> list[Any]:
 
 def _deduplicate_retrieval_bundle(bundle: RetrievalBundle, profile: Any) -> RetrievalBundle:
     seen_content: set[str] = set()
+    fingerprint_cache: dict[tuple[str, int], str] = {}
     cleaned: dict[str, list[Any]] = {attr: [] for attr, _memory_type in _DEFAULT_BUNDLE_ORDER}
 
     for attr, memory_type in _bundle_section_order(profile):
         items = getattr(bundle, attr)
         for item in items:
-            fingerprint = _content_fingerprint(item, memory_type=memory_type)
+            fingerprint = _content_fingerprint_cached(item, memory_type=memory_type, fingerprint_cache=fingerprint_cache)
             if fingerprint and fingerprint in seen_content:
                 continue
             if fingerprint:
@@ -426,15 +505,37 @@ def _intent_type_priority_scores(profile: Any) -> dict[str, float]:
     return {memory_type: (total - idx) * _INTENT_PRIORITY_STEP for idx, memory_type in enumerate(ordered_types)}
 
 
-def _dedup_keys(item: Any, *, memory_type: str) -> set[str]:
+def _dedup_keys(
+    item: Any,
+    *,
+    memory_type: str,
+    fingerprint_cache: dict[tuple[str, int], str] | None = None,
+) -> set[str]:
     keys: set[str] = set()
     item_id = str(getattr(item, "id", "") or "").strip()
     if item_id:
         keys.add(f"{memory_type}:id:{item_id}")
-    fingerprint = _content_fingerprint(item, memory_type=memory_type)
+    fingerprint = _content_fingerprint_cached(item, memory_type=memory_type, fingerprint_cache=fingerprint_cache)
     if fingerprint:
         keys.add(f"{memory_type}:content:{fingerprint}")
     return keys
+
+
+def _content_fingerprint_cached(
+    item: Any,
+    *,
+    memory_type: str,
+    fingerprint_cache: dict[tuple[str, int], str] | None,
+) -> str:
+    if fingerprint_cache is None:
+        return _content_fingerprint(item, memory_type=memory_type)
+    key = (memory_type, id(item))
+    if key not in fingerprint_cache:
+        fingerprint_cache[key] = _content_fingerprint(item, memory_type=memory_type)
+        stats.inc("retriever.fingerprint_cache_misses")
+    else:
+        stats.inc("retriever.fingerprint_cache_hits")
+    return fingerprint_cache[key]
 
 
 def _content_fingerprint(item: Any, *, memory_type: str) -> str:
@@ -468,10 +569,35 @@ def _top_scored_items(scored: list[tuple[tuple[float, ...], Any]], *, limit: int
     return [item for _, item in pairs]
 
 
-def _rerank_pool_size(limit: int | None) -> int | None:
+def _fill_from_pre_ranked(
+    reranked: list[Any],
+    pre_ranked: list[Any],
+    *,
+    memory_type: str,
+    fingerprint_cache: dict[tuple[str, int], str] | None = None,
+) -> list[Any]:
+    seen: set[str] = set()
+    out: list[Any] = []
+    for item in reranked:
+        keys = _dedup_keys(item, memory_type=memory_type, fingerprint_cache=fingerprint_cache)
+        seen.update(keys)
+        out.append(item)
+    for item in pre_ranked:
+        keys = _dedup_keys(item, memory_type=memory_type, fingerprint_cache=fingerprint_cache)
+        if keys and seen.intersection(keys):
+            continue
+        seen.update(keys)
+        out.append(item)
+    return out
+
+
+def _rerank_pool_size(limit: int | None, *, budget: int | None = None) -> int | None:
     if limit is None:
-        return None
-    return max(limit, min(_RERANK_POOL_MIN, max(limit, 1) * _RERANK_POOL_MULTIPLIER))
+        return budget
+    pool = max(limit, min(_RERANK_POOL_MIN, max(limit, 1) * _RERANK_POOL_MULTIPLIER))
+    if budget is None:
+        return pool
+    return min(pool, max(0, budget))
 
 
 def _valid_reranked_items(reranked: list[Any], original: list[Any]) -> list[Any]:

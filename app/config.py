@@ -42,6 +42,15 @@ class DistillerSettings(BaseModel):
     temperature: float
 
 
+class RerankerSettings(BaseModel):
+    provider: str
+    model: str
+    device: str | None
+    max_candidates_fast: int
+    max_candidates_quality: int
+    max_candidates_offline: int
+
+
 class PromptSettings(BaseModel):
     template_dir: str
     system_template: str
@@ -63,6 +72,13 @@ class TraceSettings(BaseModel):
     log_body: bool
     body_max: int
     redact: bool
+
+
+class TelemetrySettings(BaseModel):
+    enabled: bool
+    exporter: str
+    endpoint: str | None
+    service_name: str
 
 
 class AdminSettings(BaseModel):
@@ -124,6 +140,13 @@ class Settings(BaseSettings):
     distiller_base_url: str | None = None
     distiller_temperature: float = 0.0
 
+    reranker_provider: str = "none"  # none|sentence-transformers|cross-encoder
+    reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    reranker_device: str | None = None
+    reranker_max_candidates_fast: int = 8
+    reranker_max_candidates_quality: int = 32
+    reranker_max_candidates_offline: int = 100
+
     prompt_template_dir: str = "templates/prompt"
     prompt_system_template: str = "system.j2"
     prompt_user_template: str = "user.j2"
@@ -140,6 +163,11 @@ class Settings(BaseSettings):
     trace_log_body: bool = False
     trace_body_max: int = 1000
     trace_redact: bool = True
+
+    omni_telemetry_enabled: bool = False
+    omni_otel_exporter: str = "console"  # console|otlp
+    omni_otel_endpoint: str | None = "http://localhost:4317"
+    omni_otel_service_name: str = "omni-memory"
 
     admin_api_key: str = "CHANGE_ME"
     enable_admin: bool = True
@@ -196,6 +224,17 @@ class Settings(BaseSettings):
         )
 
     @property
+    def reranker(self) -> RerankerSettings:
+        return RerankerSettings(
+            provider=self.reranker_provider,
+            model=self.reranker_model,
+            device=self.reranker_device,
+            max_candidates_fast=self.reranker_max_candidates_fast,
+            max_candidates_quality=self.reranker_max_candidates_quality,
+            max_candidates_offline=self.reranker_max_candidates_offline,
+        )
+
+    @property
     def prompt(self) -> PromptSettings:
         return PromptSettings(
             template_dir=self.prompt_template_dir,
@@ -212,6 +251,15 @@ class Settings(BaseSettings):
     @property
     def trace(self) -> TraceSettings:
         return TraceSettings(sample_rate=self.trace_sample_rate, log_body=self.trace_log_body, body_max=self.trace_body_max, redact=self.trace_redact)
+
+    @property
+    def telemetry(self) -> TelemetrySettings:
+        return TelemetrySettings(
+            enabled=self.omni_telemetry_enabled,
+            exporter=self.omni_otel_exporter,
+            endpoint=self.omni_otel_endpoint,
+            service_name=self.omni_otel_service_name,
+        )
 
     @property
     def admin(self) -> AdminSettings:

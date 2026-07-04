@@ -35,5 +35,7 @@ def test_settings_grouped_views_cover_operational_sections():
     assert settings.prompt.template_dir == settings.prompt_template_dir
     assert settings.logging.level == settings.log_level
     assert settings.trace.sample_rate == settings.trace_sample_rate
+    assert settings.telemetry.enabled == settings.omni_telemetry_enabled
+    assert settings.telemetry.exporter == settings.omni_otel_exporter
     assert settings.admin.request_id_header == settings.request_id_header
     assert settings.storage.sqlite_path == settings.sqlite_path

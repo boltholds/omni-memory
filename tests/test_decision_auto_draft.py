@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 
 from app.builder import build_memory
 from app.decision_auto_draft import draft_decision_candidates
@@ -93,13 +94,18 @@ def test_model_can_suppress_heuristic_candidate_when_decision_not_needed():
     assert draft_decision_candidates(_registry_refactor_request(), llm=llm) == []
 
 
-def test_invalid_model_output_falls_back_to_heuristics():
+def test_invalid_model_output_falls_back_to_heuristics(caplog):
     llm = FakeDecisionLLM("not json")
+    caplog.set_level(logging.WARNING, logger="app.decision_auto_draft")
 
     candidates = draft_decision_candidates(_registry_refactor_request(), llm=llm)
 
     assert len(candidates) == 1
     assert candidates[0].meta["drafted_by"] == "heuristic"
+    assert any(record.message == "decision_auto_draft_model_failed" for record in caplog.records)
+    warning = next(record for record in caplog.records if record.message == "decision_auto_draft_model_failed")
+    assert warning.op == "draft_with_model"
+    assert warning.fallback == "heuristics"
 
 
 def test_decision_auto_draft_ignores_small_non_architectural_bugfix():

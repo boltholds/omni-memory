@@ -64,6 +64,16 @@ class PreferredReranker:
         return sorted(docs, key=lambda item: "preferred" in _item_text(item).casefold(), reverse=True)
 
 
+class CountingReranker:
+    def __init__(self) -> None:
+        self.batch_sizes: list[int] = []
+
+    def rerank(self, query: str, documents: Sequence[Any]) -> list[Any]:
+        docs = list(documents)
+        self.batch_sizes.append(len(docs))
+        return docs
+
+
 class BrokenReranker:
     def rerank(self, query: str, documents: Sequence[Any]) -> list[Any]:
         raise RuntimeError("reranker unavailable")
@@ -134,3 +144,18 @@ def test_model_bundle_reranker_failure_falls_back_to_pre_ranked_order():
     result = memory.retrieve("dependency", k_sem=2, scope={"memory_types": ["note"]})
 
     assert len(result.semantic_chunks) == 2
+
+
+def test_model_bundle_reranker_respects_fast_candidate_budget(monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "reranker_max_candidates_fast", 4)
+    reranker = CountingReranker()
+    memory = OmniMemory(model_bundle=ModelBundle(embedder=TinyEmbedder(), reranker=reranker))
+    for idx in range(20):
+        memory.write_note(f"dependency note {idx}", source="codex-dev")
+
+    memory.retrieve("dependency", k_sem=10, mode="fast", scope={"memory_types": ["note"]})
+
+    assert reranker.batch_sizes
+    assert max(reranker.batch_sizes) == 4

@@ -36,6 +36,7 @@ from domain.policy import MemoryPolicy
 from domain.repositories import IFactRepo
 from domain.writeback import WritebackRequest, WritebackResult
 from app.session_distillation import ConservativeCandidateValidator, accepted_candidates, build_transcript, candidates_to_writeback_items
+from app.telemetry import span as telemetry_span
 from infra.consistency import SimpleConsistencyEngine
 from infra.distillers.factory import build_session_distiller
 from infra.llm.llm_factory import build_llm
@@ -187,7 +188,10 @@ class OmniMemory:
         return self._to_write_report(result)
 
     def write_items_raw(self, items: list[dict[str, Any]], *, source: str = "user", dry_run: bool = False, meta: dict[str, Any] | None = None) -> WritebackResult:
-        return self.writeback_service.write(WriteItemsCommand(items=items, source=source, dry_run=dry_run, meta=meta).to_request())
+        with telemetry_span("memory.write", item_count=len(items), source=source, dry_run=dry_run) as span:
+            result = self.writeback_service.write(WriteItemsCommand(items=items, source=source, dry_run=dry_run, meta=meta).to_request())
+            _set_span_result_counts(span, result)
+            return result
 
     def _write_item_raw(self, item: dict[str, Any], *, source: str, meta: dict[str, Any] | None = None, dry_run: bool = False) -> WritebackResult:
         return self.writeback_service.write(WriteItemsCommand(items=[item], source=source, dry_run=dry_run, meta=meta).to_request())
@@ -277,7 +281,12 @@ class OmniMemory:
         return self.ops_memory_workflow.record_cycle(cycle, source=source)
 
     def consolidate_experiences(self, *, dry_run: bool = True, min_confidence: float = 0.85) -> ConsolidationResult:
-        return self.consolidator.consolidate(dry_run=dry_run, min_confidence=min_confidence)
+        with telemetry_span("memory.consolidate", dry_run=dry_run, min_confidence=min_confidence) as span:
+            result = self.consolidator.consolidate(dry_run=dry_run, min_confidence=min_confidence)
+            _set_span_attribute(span, "proposal_count", len(result.proposals))
+            _set_span_attribute(span, "saved_skill_count", len(result.saved_skills))
+            _set_span_attribute(span, "saved_failure_pattern_count", len(result.saved_failure_patterns))
+            return result
 
     def submit_review_item(self, *, kind: str, title: str, payload: dict[str, Any], confidence: float = 0.5, reason: str = "", source: str = "review-queue", meta: dict[str, Any] | None = None) -> ReviewItem:
         return self.review_queue.submit(kind=kind, title=title, payload=payload, confidence=confidence, reason=reason, source=source, meta=meta)
@@ -311,22 +320,26 @@ class OmniMemory:
         return self.repositories.stats()
 
     def commit_session(self, *, source: str = "session", dry_run: bool = False, meta: dict[str, Any] | None = None, min_confidence: float = 0.75, clear: bool = True) -> WritebackResult:
-        if not self._session_turns:
-            return WritebackResult()
-        if self.distiller is None or not hasattr(self.distiller, "distill_session"):
-            raise RuntimeError("Session distiller is not configured. Pass a distiller with distill_session().")
-        turns = list(self._session_turns)
-        transcript = build_transcript(turns)
-        distillation = self.distiller.distill_session(turns)
-        candidates, rejected = accepted_candidates(distillation, transcript=transcript, validator=ConservativeCandidateValidator(min_confidence=min_confidence))
-        raw_items = candidates_to_writeback_items(candidates, source=source, meta=meta or {"session_rejected": rejected})
-        result = self.writeback_service.write(WritebackRequest(source=source, dry_run=dry_run, meta=meta or {}, items=raw_items))
-        for reason in rejected:
-            from domain.writeback import WritebackDecision
-            result.add_rejected(WritebackDecision.reject(reason=reason, policy="SessionDistillation"))
-        if clear and not dry_run:
-            self.clear_session()
-        return result
+        with telemetry_span("memory.distill", source=source, dry_run=dry_run, turn_count=len(self._session_turns), min_confidence=min_confidence) as span:
+            if not self._session_turns:
+                return WritebackResult()
+            if self.distiller is None or not hasattr(self.distiller, "distill_session"):
+                raise RuntimeError("Session distiller is not configured. Pass a distiller with distill_session().")
+            turns = list(self._session_turns)
+            transcript = build_transcript(turns)
+            distillation = self.distiller.distill_session(turns)
+            candidates, rejected = accepted_candidates(distillation, transcript=transcript, validator=ConservativeCandidateValidator(min_confidence=min_confidence))
+            raw_items = candidates_to_writeback_items(candidates, source=source, meta=meta or {"session_rejected": rejected})
+            result = self.writeback_service.write(WritebackRequest(source=source, dry_run=dry_run, meta=meta or {}, items=raw_items))
+            for reason in rejected:
+                from domain.writeback import WritebackDecision
+                result.add_rejected(WritebackDecision.reject(reason=reason, policy="SessionDistillation"))
+            if clear and not dry_run:
+                self.clear_session()
+            _set_span_attribute(span, "candidate_count", len(candidates))
+            _set_span_attribute(span, "rejected_candidate_count", len(rejected))
+            _set_span_result_counts(span, result)
+            return result
 
     def mine_facts(self, text: str, *, source: str = "fact-mining", dry_run: bool = True, min_confidence: float = 0.75, policy_mode: str = "review", domain_ids: list[str] | None = None, meta: dict[str, Any] | None = None, extractor: FactExtractor | None = None) -> FactMiningResult:
         return self.fact_miner.mine_text(
@@ -341,7 +354,15 @@ class OmniMemory:
         )
 
     def retrieve(self, query: str, *, k_sem: int = 5, k_eps: int = 3, intent: str | None = None, mode: str | None = None, scope: dict[str, Any] | None = None) -> RetrievalBundle:
-        return self.retriever.retrieve(query, k_sem=k_sem, k_eps=k_eps, intent=intent, mode=mode, scope=scope)
+        with telemetry_span("memory.retrieve", k_sem=k_sem, k_eps=k_eps, intent=intent, mode=mode, scoped=scope is not None) as span:
+            bundle = self.retriever.retrieve(query, k_sem=k_sem, k_eps=k_eps, intent=intent, mode=mode, scope=scope)
+            _set_span_attribute(span, "semantic_count", len(bundle.semantic_chunks))
+            _set_span_attribute(span, "fact_count", len(bundle.facts))
+            _set_span_attribute(span, "episode_count", len(bundle.episodes))
+            _set_span_attribute(span, "experience_count", len(bundle.experiences))
+            _set_span_attribute(span, "skill_count", len(bundle.skills))
+            _set_span_attribute(span, "failure_pattern_count", len(bundle.failure_patterns))
+            return bundle
 
     def build_context(self, query: str, *, intent: str | None = None, mode: str | None = None, scope: dict[str, Any] | None = None) -> ContextPack:
         bundle = self.orchestrator.plan_retrieval(query, intent=intent, mode=mode, scope=scope)
@@ -385,3 +406,14 @@ class OmniMemory:
     @staticmethod
     def _to_write_report(result: WritebackResult) -> WriteReport:
         return WriteReport(saved=result.saved_count, rejected=result.rejected_count + result.error_count, reasons=result.reasons)
+
+
+def _set_span_result_counts(span: Any | None, result: WritebackResult) -> None:
+    _set_span_attribute(span, "saved_count", result.saved_count)
+    _set_span_attribute(span, "rejected_count", result.rejected_count)
+    _set_span_attribute(span, "error_count", result.error_count)
+
+
+def _set_span_attribute(span: Any | None, key: str, value: Any) -> None:
+    if span is not None and hasattr(span, "set_attribute"):
+        span.set_attribute(key, value)
