@@ -4,7 +4,7 @@ on:
   push:
     branches: [main, dev]
   pull_request:
-    branches: [main]
+    branches: [main, dev]
 
 jobs:
   test:
@@ -30,7 +30,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .venv
-          key: poetry-${{ runner.os }}-py312-${{ hashFiles('pyproject.toml') }}
+          key: poetry-${{ runner.os }}-py312-${{ hashFiles('pyproject.toml', 'poetry.lock') }}
           restore-keys: |
             poetry-${{ runner.os }}-py312-
 
@@ -47,6 +47,16 @@ jobs:
           NER_BACKEND: regex
           LOG_FILE: ""
         run: poetry run pytest -q
+
+      - name: Runtime CLI smoke check
+        env:
+          LLM_PROVIDER: none
+          EMBEDDING_BACKEND: hash
+          NER_BACKEND: regex
+          LOG_FILE: ""
+        run: |
+          poetry run omni-memory doctor --output json
+          poetry run omni-memory --help
 
       - name: Run memory benchmark smoke test
         env:
