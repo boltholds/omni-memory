@@ -12,6 +12,11 @@ SYSTEM_FALLBACK = """You are a precise assistant. Use ONLY the provided context.
 - If facts conflict, mention that briefly.
 - Be helpful, neutral, and avoid speculation.
 - If the answer is unknown from context, say so."""
+MEMORY_GROUNDED_CONTRACT = """Memory-grounded answer contract:
+- Before choosing an action, identify the most relevant memory section.
+- If memory describes a previous failure pattern, forbidden approach, accepted decision, or reusable skill, your plan must follow it.
+- If the user's suggested shortcut conflicts with relevant memory, reject the shortcut and explain the safer action.
+- Do not recommend an action that repeats a remembered mistake."""
 STYLE_HINTS = {"concise":"Answer in 1–2 sentences.","bullets":"Answer as 3–5 bullet points.","detailed":"Answer in a short, structured paragraph."}
 LANG_HINTS = {"en":"Respond in English.","ru":"Отвечай по-русски."}
 
@@ -86,7 +91,7 @@ class PromptRenderer:
                 pass  # на любой сбой — фолбэк
 
         # ---- ФОЛБЭК ----
-        system_text = SYSTEM_FALLBACK
+        system_text = _system_text(context_sections, extra=extra)
         user_text = (
             f"Question:\n{user_q}\n\n"
             f"Context:\n{ctx_text}\n\n"
@@ -94,3 +99,11 @@ class PromptRenderer:
         )
         return [{"role":"system","content": system_text},
                 {"role":"user","content": user_text}]
+
+
+def _system_text(context_sections: List[str], *, extra: Dict[str, Any]) -> str:
+    if extra.get("disable_memory_grounding_contract"):
+        return SYSTEM_FALLBACK
+    if not context_sections:
+        return SYSTEM_FALLBACK
+    return f"{SYSTEM_FALLBACK}\n\n{MEMORY_GROUNDED_CONTRACT}"

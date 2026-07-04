@@ -317,6 +317,14 @@ def _seed_meta() -> dict[str, Any]:
 
 
 def _agent_prompt(case: LongHorizonCase, *, context_text: str) -> list[Msg]:
+    has_memory = bool(context_text)
+    memory_contract = (
+        " Memory-grounded answer contract: first identify the relevant remembered lesson, "
+        "then identify the old mistake or shortcut it forbids, then choose an action that does not repeat that mistake. "
+        "If the task suggests a shortcut that conflicts with memory, reject that shortcut."
+        if has_memory
+        else ""
+    )
     return [
         {
             "role": "system",
@@ -324,6 +332,7 @@ def _agent_prompt(case: LongHorizonCase, *, context_text: str) -> list[Msg]:
                 "You are an engineering agent. Give a concise action plan. "
                 "If memory context is provided, use it explicitly when it is relevant. "
                 "Do not invent previous project history that is not in the context."
+                f"{memory_contract}"
             ),
         },
         {
@@ -332,7 +341,12 @@ def _agent_prompt(case: LongHorizonCase, *, context_text: str) -> list[Msg]:
                 f"Intent: {case.intent}\n"
                 f"Task:\n{case.task}\n\n"
                 f"Memory context:\n{context_text or '[no memory context]'}\n\n"
-                "Answer with the best next action and a short rationale."
+                f"Known forbidden mistake to check against: {case.forbidden_mistake if has_memory else '[unknown without memory]'}\n\n"
+                "Answer with:\n"
+                "Memory check: <relevant memory or 'none available'>\n"
+                "Avoid: <old mistake/shortcut to avoid or 'none known'>\n"
+                "Action: <best next action>\n"
+                "Rationale: <short rationale>"
             ),
         },
     ]
