@@ -15,6 +15,9 @@ class MemoryState(TypedDict, total=False):
     answer: str
     memory_answer: str
     memory_context: dict[str, Any]
+    memory_items: list[dict[str, Any]]
+    memory_meta: dict[str, Any]
+    memory_dry_run: bool
     memory_write: dict[str, Any]
     development_task: dict[str, Any]
     decision_candidates: list[dict[str, Any]]
@@ -103,13 +106,17 @@ def make_write_node(
     *,
     items_key: str = "memory_items",
     output_key: str = "memory_write",
+    meta_key: str = "memory_meta",
+    dry_run_key: str = "memory_dry_run",
     source: str = "langgraph",
 ) -> Callable[[MemoryState], MemoryState]:
     """Create a node that writes prepared writeback items from state."""
 
     def write_node(state: MemoryState) -> MemoryState:
         items = list(state.get(items_key, []) or [])
-        report = memory.write_items(items, source=source)
+        meta = dict(state.get(meta_key, {}) or {})
+        dry_run = bool(state.get(dry_run_key, False))
+        report = memory.write_items(items, source=source, dry_run=dry_run, meta=meta)
         return {**state, output_key: report.model_dump(mode="json")}
 
     return write_node
@@ -154,8 +161,18 @@ def make_consolidate_node(
 def make_write_tool(memory: OmniMemory):
     """Return a small callable write helper for non-LangChain graph code."""
 
-    def write_memory(items: list[dict[str, Any]], source: str = "langgraph") -> dict[str, Any]:
-        return memory.write_items(items, source=source).model_dump(mode="json")
+    def write_memory(
+        items: list[dict[str, Any]],
+        source: str = "langgraph",
+        dry_run: bool = False,
+        meta: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return memory.write_items(
+            items,
+            source=source,
+            dry_run=dry_run,
+            meta=meta or {},
+        ).model_dump(mode="json")
 
     return write_memory
 
