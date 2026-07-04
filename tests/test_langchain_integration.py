@@ -99,7 +99,7 @@ def test_langchain_write_tool_routes_through_writeback(fake_langchain_core):
     )
 
     assert result["saved"] == 1
-    assert memory.repository_stats()["notes"] == 1
+    assert memory.repository_stats()["vector_objects"] == 1
 
 
 def test_langchain_finish_task_tool_returns_decision_candidates_without_auto_writing(fake_langchain_core):
