@@ -53,6 +53,7 @@ langgraph = ">=0.2,<1.0"
 
 [tool.poetry.scripts]
 omem = "app.cli:app"
+omni-memory = "app.runtime_cli:app"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
