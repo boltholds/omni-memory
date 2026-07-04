@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 import sys
 import types
 
@@ -42,6 +43,14 @@ def _memory():
 def test_langchain_tools_require_optional_dependency(monkeypatch):
     monkeypatch.delitem(sys.modules, "langchain_core", raising=False)
     monkeypatch.delitem(sys.modules, "langchain_core.tools", raising=False)
+    real_import = builtins.__import__
+
+    def blocked_import(name, *args, **kwargs):
+        if str(name).startswith("langchain_core"):
+            raise ImportError("blocked langchain_core for optional dependency test")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", blocked_import)
 
     with pytest.raises(RuntimeError, match="LangChain integration requires langchain-core"):
         langchain_integration.create_retrieve_memory_tool(_memory())
