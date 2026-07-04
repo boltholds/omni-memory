@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from app.config import settings
-from app.services.answer_chain import AnswerChainRequest, LangChainAnswerPipeline
+from app.services.simple_answer_pipeline import AnswerPipelineRequest, SimpleAnswerPipeline
 from domain.llm import ILLMProvider, LLMResult, Msg
 from domain.models import ContextPack, ContextSection, Fact, Provenance, RetrievalBundle
 from infra.consistency import SimpleConsistencyEngine
@@ -64,18 +64,18 @@ def _fact(fid: str, obj: str) -> Fact:
     return Fact(id=fid, subject="alice", predicate="at", object=obj, provenance=Provenance(source="test"))
 
 
-def test_answer_chain_generates_with_context_and_style_mapping():
+def test_simple_answer_pipeline_generates_with_context_and_style_mapping():
     orchestrator = DummyOrchestrator(RetrievalBundle(facts=[_fact("f1", "lighthouse")]))
     prompt = PromptSpy()
     llm = EchoLLM()
-    pipeline = LangChainAnswerPipeline(
+    pipeline = SimpleAnswerPipeline(
         orchestrator=orchestrator,
         consistency=SimpleConsistencyEngine(),
         llm_provider=llm,
         prompt_renderer=prompt,
     )
 
-    result = pipeline.run(AnswerChainRequest(q="Where is Alice?", lang="ru", style="plain", temperature=0.1))
+    result = pipeline.run(AnswerPipelineRequest(q="Where is Alice?", lang="ru", style="plain", temperature=0.1))
 
     assert result.model == "echo"
     assert result.used_sections == ["Facts"]
@@ -86,16 +86,16 @@ def test_answer_chain_generates_with_context_and_style_mapping():
     assert llm.temperature == 0.1
 
 
-def test_answer_chain_reports_conflicts_and_llm_failure():
+def test_simple_answer_pipeline_reports_conflicts_and_llm_failure():
     bundle = RetrievalBundle(facts=[_fact("f1", "lighthouse"), _fact("f2", "bridge")])
-    pipeline = LangChainAnswerPipeline(
+    pipeline = SimpleAnswerPipeline(
         orchestrator=DummyOrchestrator(bundle),
         consistency=SimpleConsistencyEngine(),
         llm_provider=FailingLLM(),
         prompt_renderer=PromptSpy(),
     )
 
-    result = pipeline.run(AnswerChainRequest(q="Where is Alice?"))
+    result = pipeline.run(AnswerPipelineRequest(q="Where is Alice?"))
 
     assert result.answer.startswith("Conflict detected.")
     assert "LLM provider failed" in result.answer
@@ -103,33 +103,33 @@ def test_answer_chain_reports_conflicts_and_llm_failure():
     assert "LLM provider failed: TimeoutError" in result.advisories
 
 
-def test_answer_chain_without_llm_returns_configured_message():
-    pipeline = LangChainAnswerPipeline(
+def test_simple_answer_pipeline_without_llm_returns_configured_message():
+    pipeline = SimpleAnswerPipeline(
         orchestrator=DummyOrchestrator(RetrievalBundle(), ContextPack()),
         consistency=SimpleConsistencyEngine(),
         llm_provider=None,
         prompt_renderer=PromptSpy(),
     )
 
-    result = pipeline.run(AnswerChainRequest(q="Anything?"))
+    result = pipeline.run(AnswerPipelineRequest(q="Anything?"))
 
     assert result.answer == "LLM provider is not configured (LLM_PROVIDER=none)."
     assert result.model is None
     assert result.used_sections == []
 
 
-def test_answer_chain_honors_request_context_budget_in_generated_prompt(monkeypatch):
+def test_simple_answer_pipeline_honors_request_context_budget_in_generated_prompt(monkeypatch):
     orchestrator = BudgetAwareOrchestrator(RetrievalBundle())
     prompt = PromptSpy()
     monkeypatch.setattr(settings, "context_max_tokens", 123)
-    pipeline = LangChainAnswerPipeline(
+    pipeline = SimpleAnswerPipeline(
         orchestrator=orchestrator,
         consistency=SimpleConsistencyEngine(),
         llm_provider=EchoLLM(),
         prompt_renderer=prompt,
     )
 
-    result = pipeline.run(AnswerChainRequest(q="budget?", max_tokens=7))
+    result = pipeline.run(AnswerPipelineRequest(q="budget?", max_tokens=7))
 
     assert result.used_sections == ["Budget"]
     assert "context budget 7" in prompt.calls[0]["context_sections"][0]
