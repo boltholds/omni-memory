@@ -1,27 +1,27 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from omni_memory.domain.models import DecisionRecord
+from omni_memory.infra.record_store import InMemoryRecordStoreBackend, JsonRecordStoreBackend, RecordStoreBackend
 
 
 class DecisionRepo:
-    def __init__(self) -> None:
-        self._store: dict[str, DecisionRecord] = {}
+    def __init__(self, backend: RecordStoreBackend[DecisionRecord] | None = None) -> None:
+        self._backend = backend or InMemoryRecordStoreBackend[DecisionRecord]()
 
     def save_decision(self, decision: DecisionRecord) -> None:
-        self._store[decision.id] = decision
+        self._backend.save(decision.id, decision)
 
     def get_decision(self, decision_id: str) -> DecisionRecord | None:
-        return self._store.get(decision_id)
+        return self._backend.get(decision_id)
 
     def list_decisions(
         self,
         status: str | None = None,
         limit: int | None = None,
     ) -> list[DecisionRecord]:
-        decisions = list(self._store.values())
+        decisions = self._backend.values()
         if status:
             decisions = [decision for decision in decisions if decision.status == status]
         decisions.sort(key=lambda decision: decision.provenance.time or 0.0, reverse=True)
@@ -37,7 +37,7 @@ class DecisionRepo:
             return self.list_decisions(limit=k)
 
         scored: list[tuple[int, float, DecisionRecord]] = []
-        for decision in self._store.values():
+        for decision in self._backend.values():
             haystack = _decision_text(decision)
             score = sum(1 for term in terms if term in haystack)
             if score > 0:
@@ -47,56 +47,17 @@ class DecisionRepo:
         return [decision for _, _, decision in scored[:k]]
 
     def count(self) -> int:
-        return len(self._store)
+        return self._backend.count()
 
     def clear(self) -> int:
-        removed = self.count()
-        self._store.clear()
-        return removed
+        return self._backend.clear()
 
 
-class PersistentDecisionRepo:
+class PersistentDecisionRepo(DecisionRepo):
     def __init__(self, inner: DecisionRepo, path: str | Path) -> None:
-        self.inner = inner
-        self.path = Path(path)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._load()
-
-    def save_decision(self, decision: DecisionRecord) -> None:
-        self.inner.save_decision(decision)
-        self._flush()
-
-    def get_decision(self, decision_id: str) -> DecisionRecord | None:
-        return self.inner.get_decision(decision_id)
-
-    def list_decisions(
-        self,
-        status: str | None = None,
-        limit: int | None = None,
-    ) -> list[DecisionRecord]:
-        return self.inner.list_decisions(status=status, limit=limit)
-
-    def search(self, text: str, k: int = 5) -> list[DecisionRecord]:
-        return self.inner.search(text, k=k)
-
-    def count(self) -> int:
-        return self.inner.count()
-
-    def clear(self) -> int:
-        removed = self.inner.clear()
-        self._flush()
-        return removed
-
-    def _load(self) -> None:
-        if not self.path.exists():
-            return
-        raw = json.loads(self.path.read_text(encoding="utf-8") or "[]")
-        for item in raw:
-            self.inner.save_decision(DecisionRecord.model_validate(item))
-
-    def _flush(self) -> None:
-        data = [decision.model_dump(mode="json") for decision in self.inner.list_decisions()]
-        self.path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        super().__init__(backend=JsonRecordStoreBackend(path, DecisionRecord))
+        for item in inner.list_decisions():
+            self.save_decision(item)
 
 
 def _terms(text: str) -> list[str]:
