@@ -8,6 +8,7 @@ from omni_memory.domain.experience_evaluator import ExperienceEvaluator
 from omni_memory.fact_mining import FactExtractor
 from omni_memory.memory import OmniMemory
 
+from omni_memory.infra.graph_backend import GraphBackend
 from omni_memory.infra.repo.episodic_repo import EpisodicRepo
 from omni_memory.infra.repo.decision_repo import DecisionRepo
 from omni_memory.infra.repo.experience_repo import ExperienceRepo
@@ -28,6 +29,7 @@ def build_memory(
     vector_repo: IVectorRepo | None = None,
     vector_index_backend: VectorIndexBackend | None = None,
     graph_repo: IFactRepo | None = None,
+    graph_backend: GraphBackend | None = None,
     episodic_repo: EpisodicRepo | None = None,
     decision_repo: DecisionRepo | None = None,
     experience_repo: ExperienceRepo | None = None,
@@ -47,6 +49,9 @@ def build_memory(
 
     BYO vector index backend:
         build_memory(vector_index_backend=my_vector_index)
+
+    BYO graph backend:
+        build_memory(graph_backend=my_graph_backend)
 
     Full BYOM:
         build_memory(model_bundle=ModelBundle(...))
@@ -78,6 +83,7 @@ def build_memory(
         vector_repo=vector_repo,
         vector_index_backend=vector_index_backend,
         graph_repo=graph_repo,
+        graph_backend=graph_backend,
         episodic_repo=episodic_repo,
         decision_repo=decision_repo,
         experience_repo=experience_repo,
