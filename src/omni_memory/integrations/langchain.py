@@ -9,7 +9,7 @@ from omni_memory.integrations.langchain_schemas import (
     RetrieveMemoryInput,
     WriteMemoryInput,
 )
-from omni_memory.integrations.tool_registry import AGENT_TOOL_REGISTRY, ToolSpec, get_tool_spec
+from omni_memory.integrations.agent_tool_registry import AGENT_TOOL_REGISTRY, ToolSpec, get_tool_spec
 from omni_memory.memory import OmniMemory
 
 
