@@ -47,7 +47,11 @@ def _build_tool_function(
     handler: Callable[..., Any],
 ) -> Callable[..., str]:
     properties = _tool_properties(definition)
-    defaults = {name: schema.get("default", _MISSING) for name, schema in properties.items()}
+    required = set(_tool_required(definition))
+    defaults = {
+        name: _MISSING if name in required else schema.get("default", _MISSING)
+        for name, schema in properties.items()
+    }
 
     def tool(**kwargs: Any) -> str:
         normalized = _apply_schema_defaults(kwargs, defaults)
