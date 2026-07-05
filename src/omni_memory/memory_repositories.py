@@ -13,6 +13,7 @@ from omni_memory.infra.repo.experience_repo import ExperienceRepo
 from omni_memory.infra.repo.graph_repo import GraphRepo
 from omni_memory.infra.repo.review_repo import ReviewQueueRepo
 from omni_memory.infra.repo.vector_repo import VectorStoreRepo
+from omni_memory.infra.vector_index import VectorIndexBackend
 
 
 @dataclass(frozen=True)
@@ -162,6 +163,7 @@ def build_memory_repositories(
     *,
     embedder: Any | None = None,
     vector_repo: Any | None = None,
+    vector_index_backend: VectorIndexBackend | None = None,
     graph_repo: IFactRepo | None = None,
     episodic_repo: EpisodicRepo | None = None,
     decision_repo: Any | None = None,
@@ -172,7 +174,7 @@ def build_memory_repositories(
     domain_graph_repo: Any | None = None,
 ) -> MemoryRepositories:
     return MemoryRepositories(
-        vector=vector_repo or VectorStoreRepo(embedder=embedder),
+        vector=vector_repo or VectorStoreRepo(embedder=embedder, index_backend=vector_index_backend),
         graph=graph_repo or GraphRepo(),
         episodic=episodic_repo or EpisodicRepo(db_path=settings.sqlite_path),
         decision=decision_repo or DecisionRepo(),
