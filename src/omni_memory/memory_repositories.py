@@ -6,6 +6,7 @@ from typing import Any
 from omni_memory.config import settings
 from omni_memory.domain.repositories import IFactRepo
 from omni_memory.infra.graph_backend import GraphBackend
+from omni_memory.infra.record_store import RecordStoreBackends
 from omni_memory.infra.repo.cognitive_repo import FailurePatternRepo, SkillRepo
 from omni_memory.infra.repo.decision_repo import DecisionRepo
 from omni_memory.infra.repo.domain_graph_repo import DomainGraphRepo
@@ -73,10 +74,7 @@ class MemoryClearCommand:
             decisions=_report_count(counts.decisions, include=self.include_decisions),
             experiences=_report_count(counts.experiences, include=self.include_experiences),
             skills=_report_count(counts.skills, include=self.include_skills),
-            failure_patterns=_report_count(
-                counts.failure_patterns,
-                include=self.include_failure_patterns,
-            ),
+            failure_patterns=_report_count(counts.failure_patterns, include=self.include_failure_patterns),
             review_items=_report_count(counts.review_items, include=self.include_review_items),
             session_turns=session_turns if self.include_session else 0,
             dry_run=self.dry_run,
@@ -167,6 +165,7 @@ def build_memory_repositories(
     vector_index_backend: VectorIndexBackend | None = None,
     graph_repo: IFactRepo | None = None,
     graph_backend: GraphBackend | None = None,
+    record_store_backends: RecordStoreBackends | None = None,
     episodic_repo: EpisodicRepo | None = None,
     decision_repo: Any | None = None,
     experience_repo: Any | None = None,
@@ -175,15 +174,16 @@ def build_memory_repositories(
     review_queue_repo: Any | None = None,
     domain_graph_repo: Any | None = None,
 ) -> MemoryRepositories:
+    record_backends = record_store_backends or RecordStoreBackends()
     return MemoryRepositories(
         vector=vector_repo or VectorStoreRepo(embedder=embedder, index_backend=vector_index_backend),
         graph=graph_repo or GraphRepo(backend=graph_backend),
         episodic=episodic_repo or EpisodicRepo(db_path=settings.sqlite_path),
-        decision=decision_repo or DecisionRepo(),
-        experience=experience_repo or ExperienceRepo(),
-        skill=skill_repo or SkillRepo(),
-        failure_pattern=failure_pattern_repo or FailurePatternRepo(),
-        review_queue=review_queue_repo or ReviewQueueRepo(),
+        decision=decision_repo or DecisionRepo(backend=record_backends.decision),
+        experience=experience_repo or ExperienceRepo(backend=record_backends.experience),
+        skill=skill_repo or SkillRepo(backend=record_backends.skill),
+        failure_pattern=failure_pattern_repo or FailurePatternRepo(backend=record_backends.failure_pattern),
+        review_queue=review_queue_repo or ReviewQueueRepo(backend=record_backends.review_queue),
         domain_graph=domain_graph_repo or DomainGraphRepo(),
     )
 
