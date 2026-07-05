@@ -48,12 +48,12 @@ def build_mcp_handlers(memory: OmniMemory) -> dict[str, Callable[..., Any]]:
         "omni_memory_get_failure_pattern": lambda **kw: {"failure_pattern": (item.model_dump(mode="json") if (item := memory.repositories.failure_pattern.get_failure_pattern(kw["pattern_id"])) is not None else None)},
         "omni_memory_search_failure_patterns": lambda **kw: {"failure_patterns": [item.model_dump(mode="json") for item in memory.repositories.failure_pattern.search(kw["query"], k=kw.get("k", 5))]},
         "omni_memory_consolidate_experiences": lambda **kw: memory.consolidate_experiences(dry_run=kw.get("dry_run", True), min_confidence=kw.get("min_confidence", 0.85)).model_dump(mode="json"),
-        "omni_memory_record_agent_cycle": lambda **kw: memory.record_agent_cycle({"goal": kw["goal"], "plan": kw.get("plan") or [], "decisions": kw.get("decisions") or [], "actions": kw.get("actions") or [], "outcome": kw.get("outcome", ""), "tests": kw.get("tests") or [], "files": kw.get("files") or [], "side_effects": kw.get("side_effects") or [], "lesson": kw["lesson"], "reuse_when": kw.get("reuse_when") or [], "avoid_when": kw.get("avoid_when") or [], "confidence": kw.get("confidence", 0.8), "meta": kw.get("meta") or {}}, source=kw.get("source", "mcp-agent-cycle")).model_dump(),
+        "omni_memory_record_agent_cycle": lambda **kw: _record_agent_cycle(memory, **kw),
         "omni_memory_draft_development_cycle": lambda **kw: memory.draft_development_cycle(_development_cycle_payload(kw)).model_dump(mode="json"),
-        "omni_memory_record_development_cycle": lambda **kw: memory.record_development_cycle(_development_cycle_payload(kw), source=kw.get("source", "mcp-development-cycle")).model_dump(),
+        "omni_memory_record_development_cycle": lambda **kw: _record_development_cycle(memory, **kw),
         "omni_memory_finish_development_task": lambda **kw: memory.development_memory_workflow.finish_task(_finish_development_task_payload(kw)).model_dump(mode="json"),
         "omni_memory_draft_ops_cycle": lambda **kw: memory.draft_ops_cycle(_ops_cycle_payload(kw)).model_dump(mode="json"),
-        "omni_memory_record_ops_cycle": lambda **kw: memory.record_ops_cycle(_ops_cycle_payload(kw), source=kw.get("source", "mcp-ops-cycle")).model_dump(),
+        "omni_memory_record_ops_cycle": lambda **kw: _record_ops_cycle(memory, **kw),
         "omni_memory_submit_review_item": lambda **kw: memory.submit_review_item(kind=kw["kind"], title=kw["title"], payload=kw["payload"], confidence=kw.get("confidence", 0.5), reason=kw.get("reason", ""), source=kw.get("source", "mcp-review"), meta=kw.get("meta") or {}).model_dump(mode="json"),
         "omni_memory_list_review_items": lambda **kw: {"review_items": [item.model_dump(mode="json") for item in memory.list_review_items(status=kw.get("status"), kind=kw.get("kind"), limit=kw.get("limit"))]},
         "omni_memory_get_review_item": lambda **kw: {"review_item": (item.model_dump(mode="json") if (item := memory.get_review_item(kw["item_id"])) is not None else None)},
@@ -78,6 +78,67 @@ def _write_failure_pattern(memory: OmniMemory, **kw: Any) -> dict[str, Any]:
     result = memory.write_failure_pattern_raw(symptom=kw["symptom"], root_cause=kw.get("root_cause", ""), fix=kw.get("fix", ""), detection=kw.get("detection", ""), evidence_ids=kw.get("evidence_ids") or [], confidence=kw.get("confidence", 0.5), refs=kw.get("refs") or {}, source=kw.get("source", "mcp"), meta=kw.get("meta") or {})
     item = next((saved for saved in result.saved if isinstance(saved, FailurePatternRecord)), None)
     return {"saved": result.saved_count, "rejected": result.rejected_count + result.error_count, "reasons": result.reasons, "failure_pattern": item.model_dump(mode="json") if item else None}
+
+
+def _record_agent_cycle(memory: OmniMemory, **kw: Any) -> dict[str, Any]:
+    report = memory.record_agent_cycle(
+        {
+            "goal": kw["goal"],
+            "plan": kw.get("plan") or [],
+            "decisions": kw.get("decisions") or [],
+            "actions": kw.get("actions") or [],
+            "outcome": kw.get("outcome", ""),
+            "tests": kw.get("tests") or [],
+            "files": kw.get("files") or [],
+            "side_effects": kw.get("side_effects") or [],
+            "lesson": kw["lesson"],
+            "reuse_when": kw.get("reuse_when") or [],
+            "avoid_when": kw.get("avoid_when") or [],
+            "confidence": kw.get("confidence", 0.8),
+            "meta": kw.get("meta") or {},
+        },
+        source=kw.get("source", "mcp-agent-cycle"),
+    )
+    return _write_report_with_experience(memory, report.model_dump(), kw["goal"], kw["lesson"])
+
+
+def _record_development_cycle(memory: OmniMemory, **kw: Any) -> dict[str, Any]:
+    report = memory.record_development_cycle(
+        _development_cycle_payload(kw),
+        source=kw.get("source", "mcp-development-cycle"),
+    )
+    return _write_report_with_experience(memory, report.model_dump(), kw["goal"], kw.get("lesson", ""))
+
+
+def _record_ops_cycle(memory: OmniMemory, **kw: Any) -> dict[str, Any]:
+    report = memory.record_ops_cycle(
+        _ops_cycle_payload(kw),
+        source=kw.get("source", "mcp-ops-cycle"),
+    )
+    return _write_report_with_experience(memory, report.model_dump(), kw["goal"], kw.get("lesson", ""))
+
+
+def _write_report_with_experience(
+    memory: OmniMemory,
+    report: dict[str, Any],
+    goal: str,
+    lesson: str,
+) -> dict[str, Any]:
+    experience = _find_recorded_experience(memory, goal=goal, lesson=lesson)
+    return {**report, "experience": experience}
+
+
+def _find_recorded_experience(
+    memory: OmniMemory,
+    *,
+    goal: str,
+    lesson: str,
+) -> dict[str, Any] | None:
+    query = f"{goal} {lesson}".strip() or goal
+    for item in memory.search_experiences(query, k=10):
+        if item.goal == goal and (not lesson or item.lesson == lesson):
+            return item.model_dump(mode="json")
+    return None
 
 
 def _development_cycle_payload(kw: dict[str, Any]) -> dict[str, Any]:
