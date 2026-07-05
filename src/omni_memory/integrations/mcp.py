@@ -7,7 +7,6 @@ from omni_memory.integrations.mcp_registry import mcp_tool_schemas
 from omni_memory.memory import OmniMemory
 from omni_memory.domain.models import Fact, FailurePatternRecord, SkillRecord
 
-
 MCP_TOOL_SCHEMAS = mcp_tool_schemas()
 
 
@@ -81,59 +80,31 @@ def _write_failure_pattern(memory: OmniMemory, **kw: Any) -> dict[str, Any]:
 
 
 def _record_agent_cycle(memory: OmniMemory, **kw: Any) -> dict[str, Any]:
-    report = memory.record_agent_cycle(
-        {
-            "goal": kw["goal"],
-            "plan": kw.get("plan") or [],
-            "decisions": kw.get("decisions") or [],
-            "actions": kw.get("actions") or [],
-            "outcome": kw.get("outcome", ""),
-            "tests": kw.get("tests") or [],
-            "files": kw.get("files") or [],
-            "side_effects": kw.get("side_effects") or [],
-            "lesson": kw["lesson"],
-            "reuse_when": kw.get("reuse_when") or [],
-            "avoid_when": kw.get("avoid_when") or [],
-            "confidence": kw.get("confidence", 0.8),
-            "meta": kw.get("meta") or {},
-        },
-        source=kw.get("source", "mcp-agent-cycle"),
-    )
+    meta = {"domain": "development", **(kw.get("meta") or {})}
+    report = memory.record_agent_cycle({"goal": kw["goal"], "plan": kw.get("plan") or [], "decisions": kw.get("decisions") or [], "actions": kw.get("actions") or [], "outcome": kw.get("outcome", ""), "tests": kw.get("tests") or [], "files": kw.get("files") or [], "side_effects": kw.get("side_effects") or [], "lesson": kw["lesson"], "reuse_when": kw.get("reuse_when") or [], "avoid_when": kw.get("avoid_when") or [], "confidence": kw.get("confidence", 0.8), "domain": "development", "meta": meta}, source=kw.get("source", "mcp-agent-cycle"))
     return _write_report_with_experience(memory, report.model_dump(), kw["goal"], kw["lesson"])
 
 
 def _record_development_cycle(memory: OmniMemory, **kw: Any) -> dict[str, Any]:
-    report = memory.record_development_cycle(
-        _development_cycle_payload(kw),
-        source=kw.get("source", "mcp-development-cycle"),
-    )
+    report = memory.record_development_cycle(_development_cycle_payload(kw), source=kw.get("source", "mcp-development-cycle"))
     return _write_report_with_experience(memory, report.model_dump(), kw["goal"], kw.get("lesson", ""))
 
 
 def _record_ops_cycle(memory: OmniMemory, **kw: Any) -> dict[str, Any]:
-    report = memory.record_ops_cycle(
-        _ops_cycle_payload(kw),
-        source=kw.get("source", "mcp-ops-cycle"),
-    )
-    return _write_report_with_experience(memory, report.model_dump(), kw["goal"], kw.get("lesson", ""))
+    report = memory.record_ops_cycle(_ops_cycle_payload(kw), source=kw.get("source", "mcp-ops-cycle"))
+    return _write_report_with_experience(memory, report.model_dump(), kw["goal"], kw.get("lesson", ""), affected_resources=kw.get("affected_resources") or [])
 
 
-def _write_report_with_experience(
-    memory: OmniMemory,
-    report: dict[str, Any],
-    goal: str,
-    lesson: str,
-) -> dict[str, Any]:
+def _write_report_with_experience(memory: OmniMemory, report: dict[str, Any], goal: str, lesson: str, affected_resources: list[str] | None = None) -> dict[str, Any]:
     experience = _find_recorded_experience(memory, goal=goal, lesson=lesson)
+    if experience is not None and affected_resources is not None:
+        refs = dict(experience.get("refs") or {})
+        refs["affected_resources"] = affected_resources
+        experience = {**experience, "refs": refs}
     return {**report, "experience": experience}
 
 
-def _find_recorded_experience(
-    memory: OmniMemory,
-    *,
-    goal: str,
-    lesson: str,
-) -> dict[str, Any] | None:
+def _find_recorded_experience(memory: OmniMemory, *, goal: str, lesson: str) -> dict[str, Any] | None:
     query = f"{goal} {lesson}".strip() or goal
     for item in memory.search_experiences(query, k=10):
         if item.goal == goal and (not lesson or item.lesson == lesson):
