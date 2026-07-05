@@ -23,7 +23,17 @@ Run the MCP stdio server for MCP clients:
 poetry run omni-memory mcp
 ```
 
-The older short CLI name is still available for local maintenance commands:
+The product CLI keeps the top-level command list short. Maintenance commands are grouped:
+
+```bash
+poetry run omni-memory memory write-note "OmniMemory stores governed memory."
+poetry run omni-memory memory retrieve "governed memory"
+poetry run omni-memory memory path
+poetry run omni-memory admin export memory.json
+poetry run omni-memory debug llm-check
+```
+
+The older short CLI name is still available as a full legacy command surface:
 
 ```bash
 poetry run omem memory-path
@@ -72,7 +82,6 @@ Connect OmniMemory to a LangChain-style agent in three lines:
 ```python
 from omni_memory import build_memory
 from omni_memory.integrations.langchain import create_omni_memory_tools
-from omni_memory.integrations.langgraph import make_context_node
 
 tools = create_omni_memory_tools(build_memory())
 ```
@@ -93,7 +102,6 @@ Use OmniMemory as graph state nodes without adding LangGraph as a core dependenc
 
 ```python
 from omni_memory import build_memory
-from omni_memory.integrations.langchain import create_omni_memory_tools
 from omni_memory.integrations.langgraph import make_context_node
 
 context_node = make_context_node(build_memory())
