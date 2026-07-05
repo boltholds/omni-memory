@@ -4,39 +4,38 @@ from __future__ import annotations
 import time
 from typing import Any, Dict, Iterable, List
 
-import networkx as nx
-
 from omni_memory.metrics import GRAPH_FACTS
 from omni_memory.profiling import timed
 from omni_memory.domain.models import Fact, QuerySpec
 from omni_memory.domain.ports import IGraphRepository
+from omni_memory.infra.graph_backend import GraphBackend, build_graph_backend
 
 
 class GraphRepo(IGraphRepository):
     """
-    Храним факты как рёбра MultiDiGraph:
-    - узлы: subject и object (строки)
-    - ребро: predicate (+ остальные поля факта)
-    - ключ ребра = fact.id, чтобы избежать коллизий по одному s/p/o
+    Semantic fact repository over an injectable graph backend.
 
-    Query path is indexed by subject/object/predicate/id. This keeps retrieval
-    entity expansion proportional to local graph degree instead of scanning all
-    graph edges for every entity variant.
+    Facts are stored as graph edges:
+    - nodes: subject and object strings
+    - edge key: fact.id
+    - edge attrs: predicate, provenance, meta
+
+    Query path is indexed by subject/object/predicate/id inside the repository.
+    The concrete graph library is hidden behind GraphBackend.
     """
 
-    def __init__(self) -> None:
-        self._g = nx.MultiDiGraph()
+    def __init__(self, backend: GraphBackend | None = None) -> None:
+        self._backend = build_graph_backend(backend)
         self._edge_by_id: dict[str, tuple[str, str, str]] = {}
         self._by_subject: dict[str, set[str]] = {}
         self._by_object: dict[str, set[str]] = {}
         self._by_predicate: dict[str, set[str]] = {}
 
     def count(self) -> int:
-        return self._g.number_of_edges()
+        return self._backend.edge_count()
 
     def clear(self) -> int:
-        removed = self.count()
-        self._g.clear()
+        removed = self._backend.clear()
         self._edge_by_id.clear()
         self._by_subject.clear()
         self._by_object.clear()
@@ -44,31 +43,20 @@ class GraphRepo(IGraphRepository):
         self._set_metric()
         return removed
 
-    # ---- IGraphRepository ----
     def save_fact(self, fact: Fact) -> None:
         s = fact.subject
         o = fact.object
-        p = fact.predicate
 
         existing = self._edge_by_id.get(fact.id)
         if existing is not None:
             old_s, old_o, old_key = existing
-            old_data = dict(self._g[old_s][old_o][old_key]) if self._g.has_edge(old_s, old_o, key=old_key) else {}
+            old_data = self._backend.get_edge(old_s, old_o, old_key) or {}
             self._unindex_edge(old_s, old_o, old_key, old_data)
             if (old_s, old_o) != (s, o):
-                self._g.remove_edge(old_s, old_o, key=old_key)
-
-        if not self._g.has_node(s):
-            self._g.add_node(s, type="entity")
-        if not self._g.has_node(o):
-            self._g.add_node(o, type="entity")
+                self._backend.remove_edge(old_s, old_o, old_key)
 
         attrs = _fact_to_edge_attrs(fact)
-        if self._g.has_edge(s, o, key=fact.id):
-            self._g[s][o][fact.id].clear()
-            self._g[s][o][fact.id].update(attrs)
-        else:
-            self._g.add_edge(s, o, key=fact.id, **attrs)
+        self._backend.upsert_edge(s, o, fact.id, attrs)
         self._index_edge(s, o, fact.id, attrs)
         self._set_metric()
 
@@ -77,30 +65,31 @@ class GraphRepo(IGraphRepository):
         if edge is None:
             return None
         s, o, key = edge
-        if not self._g.has_edge(s, o, key=key):
+        data = self._backend.get_edge(s, o, key)
+        if data is None:
             return None
-        return _edge_to_fact(s, o, key, self._g[s][o][key])
+        return _edge_to_fact(s, o, key, data)
 
     def remove_fact(self, fact_id: str) -> bool:
         edge = self._edge_by_id.get(fact_id)
         if edge is None:
             return False
         s, o, key = edge
-        if not self._g.has_edge(s, o, key=key):
+        data = self._backend.get_edge(s, o, key)
+        if data is None:
             self._edge_by_id.pop(fact_id, None)
             return False
-        data = dict(self._g[s][o][key])
         self._unindex_edge(s, o, key, data)
-        self._g.remove_edge(s, o, key=key)
+        removed = self._backend.remove_edge(s, o, key)
         self._set_metric()
-        return True
+        return removed
 
     @timed("retriever.retrieve", slow_ms=100)
     def query(self, **query_spec: Any) -> List[Fact]:
         """
-        Фильтр по равенству: subject / predicate / object.
-        Любое поле можно опустить: вернём все, где остальные совпали.
-        Indexed queries are used when at least one indexed field is provided.
+        Filter by equality: subject / predicate / object.
+        Any field may be omitted. Indexed queries are used when at least one
+        indexed field is provided.
         """
         spec: QuerySpec = {}
         for key in ("subject", "predicate", "object"):
@@ -109,13 +98,13 @@ class GraphRepo(IGraphRepository):
                 spec[key] = value  # type: ignore[assignment]
 
         edge_ids = self._candidate_edge_ids(spec)
-        results: List[Fact] = []
         edge_iter: Iterable[tuple[str, str, str, dict[str, Any]]]
         if edge_ids is None:
-            edge_iter = self._g.edges(keys=True, data=True)
+            edge_iter = self._backend.iter_edges()
         else:
             edge_iter = self._edges_by_ids(edge_ids)
 
+        results: List[Fact] = []
         for s, o, key, data in edge_iter:
             if "predicate" not in data:
                 continue
@@ -137,7 +126,7 @@ class GraphRepo(IGraphRepository):
     def gc_expired(self, now: float | None = None) -> int:
         now = time.time() if now is None else float(now)
         to_remove: list[str] = []
-        for s, o, key, data in self._g.edges(keys=True, data=True):
+        for _s, _o, key, data in self._backend.iter_edges():
             meta = data.get("meta") or {}
             exp = meta.get("expire_at")
             if exp is not None and float(exp) < now:
@@ -162,8 +151,6 @@ class GraphRepo(IGraphRepository):
             sets.append(set(self._by_object.get(str(object_), set())))
         if not sets:
             return None
-        if not sets:
-            return set()
         result = sets[0]
         for item in sets[1:]:
             result &= item
@@ -175,8 +162,9 @@ class GraphRepo(IGraphRepository):
             if edge is None:
                 continue
             s, o, key = edge
-            if self._g.has_edge(s, o, key=key):
-                yield s, o, key, self._g[s][o][key]
+            data = self._backend.get_edge(s, o, key)
+            if data is not None:
+                yield s, o, key, data
 
     def _index_edge(self, s: str, o: str, key: str, data: dict[str, Any]) -> None:
         predicate = str(data.get("predicate", ""))
