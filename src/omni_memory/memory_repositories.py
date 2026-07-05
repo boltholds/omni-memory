@@ -5,6 +5,7 @@ from typing import Any
 
 from omni_memory.config import settings
 from omni_memory.domain.repositories import IFactRepo
+from omni_memory.infra.graph_backend import GraphBackend
 from omni_memory.infra.repo.cognitive_repo import FailurePatternRepo, SkillRepo
 from omni_memory.infra.repo.decision_repo import DecisionRepo
 from omni_memory.infra.repo.domain_graph_repo import DomainGraphRepo
@@ -165,6 +166,7 @@ def build_memory_repositories(
     vector_repo: Any | None = None,
     vector_index_backend: VectorIndexBackend | None = None,
     graph_repo: IFactRepo | None = None,
+    graph_backend: GraphBackend | None = None,
     episodic_repo: EpisodicRepo | None = None,
     decision_repo: Any | None = None,
     experience_repo: Any | None = None,
@@ -175,7 +177,7 @@ def build_memory_repositories(
 ) -> MemoryRepositories:
     return MemoryRepositories(
         vector=vector_repo or VectorStoreRepo(embedder=embedder, index_backend=vector_index_backend),
-        graph=graph_repo or GraphRepo(),
+        graph=graph_repo or GraphRepo(backend=graph_backend),
         episodic=episodic_repo or EpisodicRepo(db_path=settings.sqlite_path),
         decision=decision_repo or DecisionRepo(),
         experience=experience_repo or ExperienceRepo(),
