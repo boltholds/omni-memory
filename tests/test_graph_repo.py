@@ -1,6 +1,6 @@
 # tests/test_graph_repo.py
-from domain.models import Fact, Provenance
-from infra.repo.graph_repo import GraphRepo
+from omni_memory.domain.models import Fact, Provenance
+from omni_memory.infra.repo.graph_repo import GraphRepo
 
 def make_fact(fid: str, s: str, p: str, o: str) -> Fact:
     return Fact(

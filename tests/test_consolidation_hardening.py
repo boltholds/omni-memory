@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from app.consolidation import ExperienceConsolidator
-from domain.experience_evaluator import EvaluationResult
-from domain.models import ExperienceRecord
+from omni_memory.consolidation import ExperienceConsolidator
+from omni_memory.domain.experience_evaluator import EvaluationResult
+from omni_memory.domain.models import ExperienceRecord
 
 
 class FakeExperienceRepo:

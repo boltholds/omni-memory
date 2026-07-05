@@ -8,10 +8,10 @@ from typing import Any, Literal
 
 import pytest
 
-from app.builder import build_memory
-from domain.llm import ILLMProvider, LLMResult, Msg
-from infra.embeddings.factory import HashEmbedder
-from infra.llm.llm_ollama import OllamaLLM
+from omni_memory import build_memory
+from omni_memory.domain.llm import ILLMProvider, Msg
+from omni_memory.infra.embeddings.factory import HashEmbedder
+from omni_memory.infra.llm.llm_ollama import OllamaLLM
 
 
 pytestmark = [pytest.mark.llm_benchmark, pytest.mark.ollama]

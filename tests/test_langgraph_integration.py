@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from app.builder import build_memory
-from app.integrations.langgraph import (
+from omni_memory import build_memory
+from omni_memory.integrations.langgraph import (
     make_answer_node,
     make_context_node,
     make_finish_development_task_node,
     make_retrieve_node,
     make_write_node,
 )
-from infra.embeddings.factory import HashEmbedder
+from omni_memory.infra.embeddings.factory import HashEmbedder
 
 
 def _memory():

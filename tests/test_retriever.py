@@ -1,10 +1,10 @@
 # tests/test_retriever.py
-from domain.models import MemoryObject, Fact, Episode, EpisodeEvent, Provenance
-from infra.repo.vector_repo import VectorStoreRepo
-from infra.repo.graph_repo import GraphRepo
-from infra.repo.episodic_repo import EpisodicRepo
-from app.retriever import Retriever
-from app.context_builder import build_context
+from omni_memory.domain.models import MemoryObject, Fact, Episode, EpisodeEvent, Provenance
+from omni_memory.infra.repo.vector_repo import VectorStoreRepo
+from omni_memory.infra.repo.graph_repo import GraphRepo
+from omni_memory.infra.repo.episodic_repo import EpisodicRepo
+from omni_memory.retriever import Retriever
+from omni_memory.context_builder import build_context
 
 
 def _obj(i: str, text: str) -> MemoryObject:

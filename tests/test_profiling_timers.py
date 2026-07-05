@@ -1,4 +1,4 @@
-from app.profiling import timed
+from omni_memory.profiling import timed
 
 def test_timed_decorator_runs():
     calls=[]

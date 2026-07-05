@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 import pytest
 from fastapi.testclient import TestClient
-from app.main import app
+from omni_memory.main import app
 
 
 @pytest.fixture(scope="module")

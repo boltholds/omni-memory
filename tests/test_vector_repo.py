@@ -1,7 +1,7 @@
 # tests/test_vector_repo.py
-from domain.models import MemoryObject
-from infra.repo.vector_repo import VectorStoreRepo
-from infra.exceptions import CapacityExceeded
+from omni_memory.domain.models import MemoryObject
+from omni_memory.infra.repo.vector_repo import VectorStoreRepo
+from omni_memory.infra.exceptions import CapacityExceeded
 import pytest 
 
 

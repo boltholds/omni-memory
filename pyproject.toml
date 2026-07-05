@@ -6,9 +6,7 @@ authors = ["Bolt Hold <you@example.com>"]
 
 # Явно указываем пакеты
 packages = [
-  { include = "app" },
-  { include = "domain" },
-  { include = "infra" }
+  { include = "omni_memory", from = "src" }
 ]
 
 [tool.poetry.dependencies]
@@ -52,8 +50,8 @@ langchain-core = ">=0.3,<1.0"
 langgraph = ">=0.2,<1.0"
 
 [tool.poetry.scripts]
-omem = "app.cli:app"
-omni-memory = "app.runtime_cli:app"
+omem = "omni_memory.cli:app"
+omni-memory = "omni_memory.runtime_cli:app"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

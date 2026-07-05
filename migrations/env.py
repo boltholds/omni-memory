@@ -6,8 +6,8 @@ import os
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from infra.db.base import Base
-import infra.db.models  # noqa: F401
+from omni_memory.infra.db.base import Base
+import omni_memory.infra.db.models  # noqa: F401
 
 config = context.config
 

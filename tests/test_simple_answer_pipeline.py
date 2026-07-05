@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from app.services.simple_answer_pipeline import (
+from omni_memory.services.simple_answer_pipeline import (
     AnswerPipelineRequest,
     SimpleAnswerPipeline,
 )
-from domain.models import ContextPack, ContextSection
+from omni_memory.domain.models import ContextPack, ContextSection
 
 
 class AddContextStrategy:

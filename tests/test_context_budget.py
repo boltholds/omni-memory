@@ -1,6 +1,6 @@
-from domain.models import RetrievalBundle, MemoryObject, Fact, Provenance
-from app.orchestrator import Orchestrator
-from infra.consistency import SimpleConsistencyEngine
+from omni_memory.domain.models import RetrievalBundle, MemoryObject, Fact, Provenance
+from omni_memory.orchestrator import Orchestrator
+from omni_memory.infra.consistency import SimpleConsistencyEngine
 
 class DummyRetriever:
     def retrieve(self, query: str, k_sem: int = 5, k_eps: int = 3) -> RetrievalBundle:
@@ -11,7 +11,7 @@ def _note(i, text):
 
 def test_context_respects_priority_and_budget(monkeypatch):
     # малый бюджет
-    from app.config import settings
+    from omni_memory.config import settings
     monkeypatch.setattr(settings, "context_max_tokens", 10)
 
     bundle = RetrievalBundle(
@@ -33,7 +33,7 @@ def test_context_respects_priority_and_budget(monkeypatch):
     assert any("trimmed" in adv.lower() for adv in pack.advisories)
 
 def test_context_includes_notes_when_budget_allows(monkeypatch):
-    from app.config import settings
+    from omni_memory.config import settings
     monkeypatch.setattr(settings, "context_max_tokens", 1000)
     bundle = RetrievalBundle(
         semantic_chunks=[_note(1, "alpha beta gamma"), _note(2, "delta epsilon")],

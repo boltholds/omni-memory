@@ -1,5 +1,5 @@
-from domain.llm import ILLMProvider, Msg, LLMResult
-from app.prompting import PromptRenderer
+from omni_memory.domain.llm import ILLMProvider, Msg, LLMResult
+from omni_memory.prompting import PromptRenderer
 
 class DummyLLM(ILLMProvider):
     def generate(self, messages: list[Msg], temperature: float = 0.3) -> LLMResult:

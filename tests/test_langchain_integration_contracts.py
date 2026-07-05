@@ -3,9 +3,9 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from app.integrations.langchain_schemas import RetrieveMemoryInput, WriteFactInput, WriteMemoryItemsInput
-from app.integrations.langgraph import make_answer_node, make_retrieve_node, make_write_tool
-from domain.models import ContextPack, MemoryObject, RetrievalBundle, WriteReport
+from omni_memory.integrations.langchain_schemas import RetrieveMemoryInput, WriteFactInput, WriteMemoryItemsInput
+from omni_memory.integrations.langgraph import make_answer_node, make_retrieve_node, make_write_tool
+from omni_memory.domain.models import ContextPack, MemoryObject, RetrievalBundle, WriteReport
 
 
 class FakeAnswer:

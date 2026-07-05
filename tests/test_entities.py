@@ -1,4 +1,4 @@
-from app.entities import RegexEntityExtractor, EntityLinker
+from omni_memory.entities import RegexEntityExtractor, EntityLinker
 
 def test_regex_extractor_basic():
     extr = RegexEntityExtractor()

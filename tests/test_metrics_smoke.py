@@ -1,6 +1,6 @@
 # tests/test_metrics_smoke.py
 from fastapi.testclient import TestClient
-from app.main import app
+from omni_memory.main import app
 
 client = TestClient(app)
 

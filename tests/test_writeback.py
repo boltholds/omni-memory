@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from app.builder import build_memory
-from domain.models import Provenance
-from infra.embeddings.factory import HashEmbedder
+from omni_memory import build_memory
+from omni_memory.domain.models import Provenance
+from omni_memory.infra.embeddings.factory import HashEmbedder
 
 
 def _memory():

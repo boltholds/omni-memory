@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from domain.models import Fact, Provenance
-from infra.repo.graph_repo import GraphRepo
+from omni_memory.domain.models import Fact, Provenance
+from omni_memory.infra.repo.graph_repo import GraphRepo
 
 
 def fact(fid: str, subject: str, predicate: str, object_: str) -> Fact:

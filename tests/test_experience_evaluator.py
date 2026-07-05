@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from app.builder import build_memory
-from domain.experience_evaluator import DomainExperienceEvaluator, EvaluationResult
-from domain.models import ExperienceRecord
-from infra.embeddings.factory import HashEmbedder
+from omni_memory.builder import build_memory
+from omni_memory.domain.experience_evaluator import DomainExperienceEvaluator, EvaluationResult
+from omni_memory.domain.models import ExperienceRecord
+from omni_memory.infra.embeddings.factory import HashEmbedder
 
 
 class OpsLikeEvaluator:

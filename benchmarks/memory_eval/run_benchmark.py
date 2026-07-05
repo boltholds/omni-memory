@@ -11,11 +11,11 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.builder import build_memory
-from app.prompting import PromptRenderer
-from domain.llm import LLMResult, Msg
-from infra.embeddings.factory import HashEmbedder
-from infra.llm.llm_factory import LLMConfig, build_llm
+from omni_memory.builder import build_memory
+from omni_memory.prompting import PromptRenderer
+from omni_memory.domain.llm import LLMResult, Msg
+from omni_memory.infra.embeddings.factory import HashEmbedder
+from omni_memory.infra.llm.llm_factory import LLMConfig, build_llm
 
 from scoring import score_memory, score_no_memory, summarize_results
 
