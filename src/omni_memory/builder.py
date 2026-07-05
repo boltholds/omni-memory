@@ -14,6 +14,7 @@ from omni_memory.infra.repo.experience_repo import ExperienceRepo
 from omni_memory.infra.repo.cognitive_repo import FailurePatternRepo, SkillRepo
 from omni_memory.infra.repo.review_repo import ReviewQueueRepo
 from omni_memory.infra.rerankers import build_reranker
+from omni_memory.infra.vector_index import VectorIndexBackend
 
 
 def build_memory(
@@ -25,6 +26,7 @@ def build_memory(
     model_bundle: ModelBundle | None = None,
     distiller: ISessionMemoryDistiller | None = None,
     vector_repo: IVectorRepo | None = None,
+    vector_index_backend: VectorIndexBackend | None = None,
     graph_repo: IFactRepo | None = None,
     episodic_repo: EpisodicRepo | None = None,
     decision_repo: DecisionRepo | None = None,
@@ -42,6 +44,9 @@ def build_memory(
 
     BYO-Embedder:
         build_memory(embedder=my_embedder)
+
+    BYO vector index backend:
+        build_memory(vector_index_backend=my_vector_index)
 
     Full BYOM:
         build_memory(model_bundle=ModelBundle(...))
@@ -71,6 +76,7 @@ def build_memory(
         model_bundle=selected_bundle,
         distiller=distiller,
         vector_repo=vector_repo,
+        vector_index_backend=vector_index_backend,
         graph_repo=graph_repo,
         episodic_repo=episodic_repo,
         decision_repo=decision_repo,
