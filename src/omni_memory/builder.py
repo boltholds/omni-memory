@@ -9,6 +9,7 @@ from omni_memory.fact_mining import FactExtractor
 from omni_memory.memory import OmniMemory
 
 from omni_memory.infra.graph_backend import GraphBackend
+from omni_memory.infra.record_store import RecordStoreBackends
 from omni_memory.infra.repo.episodic_repo import EpisodicRepo
 from omni_memory.infra.repo.decision_repo import DecisionRepo
 from omni_memory.infra.repo.experience_repo import ExperienceRepo
@@ -30,6 +31,7 @@ def build_memory(
     vector_index_backend: VectorIndexBackend | None = None,
     graph_repo: IFactRepo | None = None,
     graph_backend: GraphBackend | None = None,
+    record_store_backends: RecordStoreBackends | None = None,
     episodic_repo: EpisodicRepo | None = None,
     decision_repo: DecisionRepo | None = None,
     experience_repo: ExperienceRepo | None = None,
@@ -53,6 +55,9 @@ def build_memory(
     BYO graph backend:
         build_memory(graph_backend=my_graph_backend)
 
+    BYO typed record stores:
+        build_memory(record_store_backends=RecordStoreBackends(...))
+
     Full BYOM:
         build_memory(model_bundle=ModelBundle(...))
 
@@ -73,6 +78,8 @@ def build_memory(
             distiller=selected_bundle.distiller,
         )
 
+    record_backends = record_store_backends or RecordStoreBackends()
+
     return OmniMemory(
         use_llm=use_llm,
         reject_conflicts=reject_conflicts,
@@ -85,11 +92,11 @@ def build_memory(
         graph_repo=graph_repo,
         graph_backend=graph_backend,
         episodic_repo=episodic_repo,
-        decision_repo=decision_repo,
-        experience_repo=experience_repo,
-        skill_repo=skill_repo,
-        failure_pattern_repo=failure_pattern_repo,
-        review_queue_repo=review_queue_repo,
+        decision_repo=decision_repo or (DecisionRepo(backend=record_backends.decision) if record_backends.decision is not None else None),
+        experience_repo=experience_repo or (ExperienceRepo(backend=record_backends.experience) if record_backends.experience is not None else None),
+        skill_repo=skill_repo or (SkillRepo(backend=record_backends.skill) if record_backends.skill is not None else None),
+        failure_pattern_repo=failure_pattern_repo or (FailurePatternRepo(backend=record_backends.failure_pattern) if record_backends.failure_pattern is not None else None),
+        review_queue_repo=review_queue_repo or (ReviewQueueRepo(backend=record_backends.review_queue) if record_backends.review_queue is not None else None),
         fact_extractor=fact_extractor,
         experience_evaluator=experience_evaluator,
     )
