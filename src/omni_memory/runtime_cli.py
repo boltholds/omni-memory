@@ -31,7 +31,7 @@ def serve_cmd(
     if workers is not None:
         kwargs["workers"] = workers
 
-    uvicorn.run("app.main:create_app", **kwargs)
+    uvicorn.run("omni_memory.main:create_app", **kwargs)
 
 
 @app.command("doctor")
