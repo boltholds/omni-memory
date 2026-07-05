@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "omni_memory"
-version = "0.1.0"
+version = "0.2.1"
 description = "Omni-memory MVP"
 authors = ["Bolt Hold <you@example.com>"]
 
@@ -60,7 +60,7 @@ build-backend = "poetry.core.masonry.api"
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-exclude = ["infra/gen"]
+
 
 [tool.mypy]
 python_version = "3.12"
