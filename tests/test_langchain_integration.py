@@ -8,7 +8,7 @@ import pytest
 
 from omni_memory import build_memory
 from omni_memory.integrations import langchain as langchain_integration
-from omni_memory.integrations.tool_registry import AGENT_TOOL_REGISTRY, get_tool_spec
+from omni_memory.integrations.agent_tool_registry import AGENT_TOOL_REGISTRY, get_tool_spec
 from omni_memory.infra.embeddings.factory import HashEmbedder
 
 
