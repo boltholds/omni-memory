@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from omni_memory import build_memory
 from omni_memory.domain.models import (
     DecisionRecord,
     ExperienceRecord,
@@ -140,3 +141,22 @@ def test_repository_builder_accepts_record_store_backend_bundle():
     assert experience_backend.saved_ids == ["e1"]
     assert repos.decision.count() == 1
     assert repos.experience.count() == 1
+
+
+def test_public_memory_builder_accepts_record_store_backend_bundle():
+    decision_backend = RecordingRecordStoreBackend()
+    experience_backend = RecordingRecordStoreBackend()
+    memory = build_memory(
+        record_store_backends=RecordStoreBackends(
+            decision=decision_backend,
+            experience=experience_backend,
+        )
+    )
+
+    memory.write_decision(title="Builder accepts record backend", decision="Expose record_store_backends on build_memory.", source="test")
+    memory.record_experience(goal="Use record backend", lesson="Builder should wire typed stores.", source="test")
+
+    assert decision_backend.saved_ids
+    assert experience_backend.saved_ids
+    assert memory.repository_stats()["decisions"] == 1
+    assert memory.repository_stats()["experiences"] == 1
