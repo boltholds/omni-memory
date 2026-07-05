@@ -1,23 +1,23 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from omni_memory.domain.models import FailurePatternRecord, SkillRecord
+from omni_memory.infra.record_store import InMemoryRecordStoreBackend, JsonRecordStoreBackend, RecordStoreBackend
 
 
 class SkillRepo:
-    def __init__(self) -> None:
-        self._store: dict[str, SkillRecord] = {}
+    def __init__(self, backend: RecordStoreBackend[SkillRecord] | None = None) -> None:
+        self._backend = backend or InMemoryRecordStoreBackend[SkillRecord]()
 
     def save_skill(self, skill: SkillRecord) -> None:
-        self._store[skill.id] = skill
+        self._backend.save(skill.id, skill)
 
     def get_skill(self, skill_id: str) -> SkillRecord | None:
-        return self._store.get(skill_id)
+        return self._backend.get(skill_id)
 
     def list_skills(self, limit: int | None = None) -> list[SkillRecord]:
-        items = list(self._store.values())
+        items = self._backend.values()
         items.sort(key=lambda item: item.provenance.time or 0.0, reverse=True)
         return items[: max(0, limit)] if limit is not None else items
 
@@ -26,7 +26,7 @@ class SkillRepo:
         if not terms:
             return self.list_skills(limit=k)
         scored: list[tuple[int, float, SkillRecord]] = []
-        for item in self._store.values():
+        for item in self._backend.values():
             haystack = _skill_text(item)
             score = sum(1 for term in terms if term in haystack)
             if score > 0:
@@ -35,26 +35,24 @@ class SkillRepo:
         return [item for _, _, item in scored[:k]]
 
     def count(self) -> int:
-        return len(self._store)
+        return self._backend.count()
 
     def clear(self) -> int:
-        removed = len(self._store)
-        self._store.clear()
-        return removed
+        return self._backend.clear()
 
 
 class FailurePatternRepo:
-    def __init__(self) -> None:
-        self._store: dict[str, FailurePatternRecord] = {}
+    def __init__(self, backend: RecordStoreBackend[FailurePatternRecord] | None = None) -> None:
+        self._backend = backend or InMemoryRecordStoreBackend[FailurePatternRecord]()
 
     def save_failure_pattern(self, pattern: FailurePatternRecord) -> None:
-        self._store[pattern.id] = pattern
+        self._backend.save(pattern.id, pattern)
 
     def get_failure_pattern(self, pattern_id: str) -> FailurePatternRecord | None:
-        return self._store.get(pattern_id)
+        return self._backend.get(pattern_id)
 
     def list_failure_patterns(self, limit: int | None = None) -> list[FailurePatternRecord]:
-        items = list(self._store.values())
+        items = self._backend.values()
         items.sort(key=lambda item: item.provenance.time or 0.0, reverse=True)
         return items[: max(0, limit)] if limit is not None else items
 
@@ -63,7 +61,7 @@ class FailurePatternRepo:
         if not terms:
             return self.list_failure_patterns(limit=k)
         scored: list[tuple[int, float, FailurePatternRecord]] = []
-        for item in self._store.values():
+        for item in self._backend.values():
             haystack = _failure_pattern_text(item)
             score = sum(1 for term in terms if term in haystack)
             if score > 0:
@@ -72,92 +70,24 @@ class FailurePatternRepo:
         return [item for _, _, item in scored[:k]]
 
     def count(self) -> int:
-        return len(self._store)
+        return self._backend.count()
 
     def clear(self) -> int:
-        removed = len(self._store)
-        self._store.clear()
-        return removed
+        return self._backend.clear()
 
 
-class PersistentSkillRepo:
+class PersistentSkillRepo(SkillRepo):
     def __init__(self, inner: SkillRepo, path: str | Path) -> None:
-        self.inner = inner
-        self.path = Path(path)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._load()
-
-    def save_skill(self, skill: SkillRecord) -> None:
-        self.inner.save_skill(skill)
-        self._flush()
-
-    def get_skill(self, skill_id: str) -> SkillRecord | None:
-        return self.inner.get_skill(skill_id)
-
-    def list_skills(self, limit: int | None = None) -> list[SkillRecord]:
-        return self.inner.list_skills(limit=limit)
-
-    def search(self, text: str, k: int = 5) -> list[SkillRecord]:
-        return self.inner.search(text, k=k)
-
-    def count(self) -> int:
-        return self.inner.count()
-
-    def clear(self) -> int:
-        removed = self.inner.clear()
-        self._flush()
-        return removed
-
-    def _load(self) -> None:
-        if not self.path.exists():
-            return
-        raw = json.loads(self.path.read_text(encoding="utf-8") or "[]")
-        for item in raw:
-            self.inner.save_skill(SkillRecord.model_validate(item))
-
-    def _flush(self) -> None:
-        data = [item.model_dump(mode="json") for item in self.inner.list_skills()]
-        self.path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        super().__init__(backend=JsonRecordStoreBackend(path, SkillRecord))
+        for item in inner.list_skills():
+            self.save_skill(item)
 
 
-class PersistentFailurePatternRepo:
+class PersistentFailurePatternRepo(FailurePatternRepo):
     def __init__(self, inner: FailurePatternRepo, path: str | Path) -> None:
-        self.inner = inner
-        self.path = Path(path)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._load()
-
-    def save_failure_pattern(self, pattern: FailurePatternRecord) -> None:
-        self.inner.save_failure_pattern(pattern)
-        self._flush()
-
-    def get_failure_pattern(self, pattern_id: str) -> FailurePatternRecord | None:
-        return self.inner.get_failure_pattern(pattern_id)
-
-    def list_failure_patterns(self, limit: int | None = None) -> list[FailurePatternRecord]:
-        return self.inner.list_failure_patterns(limit=limit)
-
-    def search(self, text: str, k: int = 5) -> list[FailurePatternRecord]:
-        return self.inner.search(text, k=k)
-
-    def count(self) -> int:
-        return self.inner.count()
-
-    def clear(self) -> int:
-        removed = self.inner.clear()
-        self._flush()
-        return removed
-
-    def _load(self) -> None:
-        if not self.path.exists():
-            return
-        raw = json.loads(self.path.read_text(encoding="utf-8") or "[]")
-        for item in raw:
-            self.inner.save_failure_pattern(FailurePatternRecord.model_validate(item))
-
-    def _flush(self) -> None:
-        data = [item.model_dump(mode="json") for item in self.inner.list_failure_patterns()]
-        self.path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        super().__init__(backend=JsonRecordStoreBackend(path, FailurePatternRecord))
+        for item in inner.list_failure_patterns():
+            self.save_failure_pattern(item)
 
 
 def _terms(text: str) -> list[str]:
