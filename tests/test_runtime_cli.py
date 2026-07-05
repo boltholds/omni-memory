@@ -73,7 +73,7 @@ def test_runtime_cli_serve_invokes_uvicorn_factory(monkeypatch):
     assert result.exit_code == 0
     assert calls == [
         {
-            "target": "app.main:create_app",
+            "target": "omni_memory.main:create_app",
             "host": "0.0.0.0",
             "port": 9999,
             "reload": True,
