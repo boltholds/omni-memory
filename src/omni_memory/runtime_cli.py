@@ -7,7 +7,40 @@ from typing import Any
 
 import typer
 
-from omni_memory.cli import _emit_json, _local_memory, _normalize_output, app
+from omni_memory import cli as legacy_cli
+from omni_memory.cli import _emit_json, _local_memory, _normalize_output
+
+
+app = typer.Typer(
+    add_completion=False,
+    no_args_is_help=True,
+    help="OmniMemory runtime CLI for server, MCP and agent memory operations.",
+)
+memory_app = typer.Typer(no_args_is_help=True, help="Local memory read/write commands.")
+admin_app = typer.Typer(no_args_is_help=True, help="Server import/export and vector maintenance commands.")
+debug_app = typer.Typer(no_args_is_help=True, help="Diagnostics and profiling commands.")
+
+app.add_typer(memory_app, name="memory")
+app.add_typer(admin_app, name="admin")
+app.add_typer(debug_app, name="debug")
+
+memory_app.command("write-note")(legacy_cli.write_note)
+memory_app.command("retrieve")(legacy_cli.retrieve_cmd)
+memory_app.command("ask")(legacy_cli.ask_cmd)
+memory_app.command("path")(legacy_cli.memory_path_cmd)
+memory_app.command("load-facts")(legacy_cli.load_facts)
+memory_app.command("load-notes")(legacy_cli.load_notes)
+memory_app.command("load-episodes")(legacy_cli.load_episodes)
+
+admin_app.command("export")(legacy_cli.export_cmd)
+admin_app.command("import")(legacy_cli.import_cmd)
+admin_app.command("vector-save")(legacy_cli.vector_save_cmd)
+admin_app.command("vector-load")(legacy_cli.vector_load_cmd)
+
+debug_app.command("llm-check")(legacy_cli.llm_check_cmd)
+debug_app.command("flamegraph")(legacy_cli.flamegraph_cmd)
+
+app.command("mcp")(legacy_cli.mcp_cmd)
 
 
 @app.command("serve")
