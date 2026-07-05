@@ -39,6 +39,7 @@ from omni_memory.session_distillation import ConservativeCandidateValidator, acc
 from omni_memory.telemetry import span as telemetry_span
 from omni_memory.infra.consistency import SimpleConsistencyEngine
 from omni_memory.infra.distillers.factory import build_session_distiller
+from omni_memory.infra.graph_backend import GraphBackend
 from omni_memory.infra.llm.llm_factory import build_llm
 from omni_memory.infra.repo.decision_repo import DecisionRepo
 from omni_memory.infra.repo.episodic_repo import EpisodicRepo
@@ -113,6 +114,7 @@ class OmniMemory:
         vector_repo: IVectorRepo | None = None,
         vector_index_backend: VectorIndexBackend | None = None,
         graph_repo: IFactRepo | None = None,
+        graph_backend: GraphBackend | None = None,
         episodic_repo: EpisodicRepo | None = None,
         decision_repo: DecisionRepo | None = None,
         experience_repo: ExperienceRepo | None = None,
@@ -136,6 +138,7 @@ class OmniMemory:
             vector_repo=vector_repo,
             vector_index_backend=vector_index_backend,
             graph_repo=graph_repo,
+            graph_backend=graph_backend,
             episodic_repo=episodic_repo,
             decision_repo=decision_repo,
             experience_repo=experience_repo,
