@@ -4,9 +4,9 @@ from typing import Any, Sequence
 
 import numpy as np
 
-from app.memory import OmniMemory
-from domain.llm import LLMResult, Msg
-from domain.model_ports import ModelBundle
+from omni_memory import OmniMemory
+from omni_memory.domain.llm import LLMResult, Msg
+from omni_memory.domain.model_ports import ModelBundle
 
 
 class DummyLLM:
@@ -103,7 +103,7 @@ def test_byom_bundle_can_supply_llm_and_embedder():
 
 
 def test_llm_bundle_can_power_session_distillation_without_explicit_distiller(monkeypatch):
-    from app.config import settings
+    from omni_memory.config import settings
 
     monkeypatch.setattr(settings, "distiller_provider", "inherit")
 
@@ -147,7 +147,7 @@ def test_model_bundle_reranker_failure_falls_back_to_pre_ranked_order():
 
 
 def test_model_bundle_reranker_respects_fast_candidate_budget(monkeypatch):
-    from app.config import settings
+    from omni_memory.config import settings
 
     monkeypatch.setattr(settings, "reranker_max_candidates_fast", 4)
     reranker = CountingReranker()

@@ -1,9 +1,9 @@
 # tests/test_orchestrator.py
 from typing import Any
 
-from domain.models import MemoryObject, Fact, Episode, EpisodeEvent, Provenance, RetrievalBundle
-from infra.consistency import SimpleConsistencyEngine
-from app.orchestrator import Orchestrator
+from omni_memory.domain.models import MemoryObject, Fact, Episode, EpisodeEvent, Provenance, RetrievalBundle
+from omni_memory.infra.consistency import SimpleConsistencyEngine
+from omni_memory.orchestrator import Orchestrator
 
 
 class DummyRetriever:

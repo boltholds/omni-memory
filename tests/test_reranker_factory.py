@@ -4,18 +4,18 @@ import sys
 import types
 from typing import Any
 
-from app.builder import build_memory
-from app.config import settings
-from domain.models import MemoryObject, Provenance
-from infra.embeddings.factory import HashEmbedder
-from infra.rerankers.factory import build_reranker, reranker_candidate_budget
+from omni_memory.builder import build_memory
+from omni_memory.config import settings
+from omni_memory.domain.models import MemoryObject, Provenance
+from omni_memory.infra.embeddings.factory import HashEmbedder
+from omni_memory.infra.rerankers.factory import build_reranker, reranker_candidate_budget
 
 
 def test_reranker_factory_default_none_does_not_import_cross_encoder_module():
-    sys.modules.pop("infra.rerankers.cross_encoder", None)
+    sys.modules.pop("omni_memory.infra.rerankers.cross_encoder", None)
 
     assert build_reranker(provider="none") is None
-    assert "infra.rerankers.cross_encoder" not in sys.modules
+    assert "omni_memory.infra.rerankers.cross_encoder" not in sys.modules
 
 
 def test_cross_encoder_reranker_lazy_adapter_orders_documents(monkeypatch):
@@ -52,7 +52,7 @@ def test_build_memory_uses_configured_reranker_when_bundle_does_not_supply_one(m
             return list(documents)
 
     fake = FakeReranker()
-    monkeypatch.setattr("app.builder.build_reranker", lambda: fake)
+    monkeypatch.setattr("omni_memory.builder.build_reranker", lambda: fake)
 
     memory = build_memory(embedder=HashEmbedder())
 

@@ -4,12 +4,12 @@ import json
 
 import pytest
 
-from app.builder import build_memory
-from app.development_cycle import DevelopmentCycleDraft
-from app.integrations.mcp import MCP_TOOL_SCHEMAS, build_mcp_handlers
-from app.mcp_server import build_mcp_app
-from domain.distiller import MemoryCandidate, SessionDistillationResult, SessionTurn
-from infra.embeddings.factory import HashEmbedder
+from omni_memory.builder import build_memory
+from omni_memory.development_cycle import DevelopmentCycleDraft
+from omni_memory.integrations.mcp import MCP_TOOL_SCHEMAS, build_mcp_handlers
+from omni_memory.mcp_server import build_mcp_app
+from omni_memory.domain.distiller import MemoryCandidate, SessionDistillationResult, SessionTurn
+from omni_memory.infra.embeddings.factory import HashEmbedder
 
 
 class FakeWorkflowDistiller:

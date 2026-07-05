@@ -6,7 +6,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from app import runtime_cli
+from omni_memory import runtime_cli
 
 
 runner = CliRunner()
@@ -73,7 +73,7 @@ def test_runtime_cli_serve_invokes_uvicorn_factory(monkeypatch):
     assert result.exit_code == 0
     assert calls == [
         {
-            "target": "app.main:create_app",
+            "target": "omni_memory.main:create_app",
             "host": "0.0.0.0",
             "port": 9999,
             "reload": True,
@@ -87,5 +87,5 @@ def test_pyproject_exposes_omni_memory_runtime_script():
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
 
     scripts = pyproject["tool"]["poetry"]["scripts"]
-    assert scripts["omni-memory"] == "app.runtime_cli:app"
-    assert scripts["omem"] == "app.cli:app"
+    assert scripts["omni-memory"] == "omni_memory.runtime_cli:app"
+    assert scripts["omem"] == "omni_memory.cli:app"

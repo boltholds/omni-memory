@@ -78,7 +78,7 @@ jobs:
         run: |
           mkdir -p data
           poetry run python - <<'PY'
-          from infra.db.audit_repo import build_audit_repository
+          from omni_memory.infra.db.audit_repo import build_audit_repository
           repo = build_audit_repository()
           assert repo is not None
           print('audit repo ok')

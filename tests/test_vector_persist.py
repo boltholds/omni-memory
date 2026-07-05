@@ -1,6 +1,6 @@
 from pathlib import Path
-from infra.repo.vector_repo import VectorStoreRepo
-from domain.models import MemoryObject, Provenance
+from omni_memory.infra.repo.vector_repo import VectorStoreRepo
+from omni_memory.domain.models import MemoryObject, Provenance
 
 def _obj(i, t): 
     return MemoryObject(id=str(i), type="note", payload={"text": t}, provenance=Provenance(source="test"))

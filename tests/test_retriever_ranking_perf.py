@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from app.memory_planner import MemoryPlanner
-from app.retriever import Retriever, RetrievalScopeFilter, _MAX_GRAPH_FALLBACK_QUERY_CALLS, _deduplicate_retrieval_bundle, _intent_type_priority_scores
-from app.stats import stats
-from domain.models import ExperienceRecord, Fact, MemoryObject, Provenance, RetrievalBundle
-from infra.embeddings.factory import HashEmbedder
-from infra.repo.episodic_repo import EpisodicRepo
-from infra.repo.graph_repo import GraphRepo
-from infra.repo.vector_repo import VectorStoreRepo
+from omni_memory.memory_planner import MemoryPlanner
+from omni_memory.retriever import Retriever, RetrievalScopeFilter, _MAX_GRAPH_FALLBACK_QUERY_CALLS, _deduplicate_retrieval_bundle, _intent_type_priority_scores
+from omni_memory.stats import stats
+from omni_memory.domain.models import ExperienceRecord, Fact, MemoryObject, Provenance, RetrievalBundle
+from omni_memory.infra.embeddings.factory import HashEmbedder
+from omni_memory.infra.repo.episodic_repo import EpisodicRepo
+from omni_memory.infra.repo.graph_repo import GraphRepo
+from omni_memory.infra.repo.vector_repo import VectorStoreRepo
 
 
 def fact(fid: str, subject: str, object_: str) -> Fact:

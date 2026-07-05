@@ -1,9 +1,9 @@
-from app.retriever import Retriever
-from infra.repo.vector_repo import VectorStoreRepo
-from infra.repo.graph_repo import GraphRepo
-from infra.repo.episodic_repo import EpisodicRepo
-from domain.models import MemoryObject, Fact, Episode, EpisodeEvent, Provenance
-from app.config import settings
+from omni_memory.retriever import Retriever
+from omni_memory.infra.repo.vector_repo import VectorStoreRepo
+from omni_memory.infra.repo.graph_repo import GraphRepo
+from omni_memory.infra.repo.episodic_repo import EpisodicRepo
+from omni_memory.domain.models import MemoryObject, Fact, Episode, EpisodeEvent, Provenance
+from omni_memory.config import settings
 
 def _obj(i, t): return MemoryObject(id=i, type="note", payload={"text":t}, provenance=Provenance(source="test"))
 def _fact(i,s,p,o): return Fact(id=i, subject=s, predicate=p, object=o, provenance=Provenance(source="test"))

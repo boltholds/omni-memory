@@ -1,6 +1,6 @@
 # tests/test_consistency.py
-from domain.models import Fact, Provenance
-from infra.consistency import SimpleConsistencyEngine, build_fact_beliefs, score_trust_recent_first
+from omni_memory.domain.models import Fact, Provenance
+from omni_memory.infra.consistency import SimpleConsistencyEngine, build_fact_beliefs, score_trust_recent_first
 
 
 def F(fid: str, s: str, p: str, o: str, t: float = 0.0, src: str = "user") -> Fact:

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.config import Settings
+from omni_memory.config import Settings
 
 
 def test_settings_keep_flat_env_compatibility_and_expose_grouped_views(monkeypatch):

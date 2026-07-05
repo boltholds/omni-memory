@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from domain.distiller import MemoryCandidate, SessionDistillationResult, SessionTurn
-from app.memory import OmniMemory
-from infra.embeddings.factory import HashEmbedder
-from infra.repo.episodic_repo import EpisodicRepo
-from infra.repo.graph_repo import GraphRepo
-from infra.repo.vector_repo import VectorStoreRepo
+from omni_memory.domain.distiller import MemoryCandidate, SessionDistillationResult, SessionTurn
+from omni_memory.memory import OmniMemory
+from omni_memory.infra.embeddings.factory import HashEmbedder
+from omni_memory.infra.repo.episodic_repo import EpisodicRepo
+from omni_memory.infra.repo.graph_repo import GraphRepo
+from omni_memory.infra.repo.vector_repo import VectorStoreRepo
 
 
 class FakeSessionDistiller:

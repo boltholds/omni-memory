@@ -1,6 +1,6 @@
 # tests/test_policy.py
 import time
-from domain.policy import MemoryPolicy
+from omni_memory.domain.policy import MemoryPolicy
 
 
 def test_filter_write_blocks_email_and_api_key():

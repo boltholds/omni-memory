@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
-from app.main import app
-from app.config import settings
+from omni_memory.main import app
+from omni_memory.config import settings
 
 client = TestClient(app)
 

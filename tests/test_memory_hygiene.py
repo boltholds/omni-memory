@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from app.builder import build_memory
-from domain.models import DomainLink, DomainNode
-from infra.embeddings.factory import HashEmbedder
-from infra.repo.domain_graph_repo import DomainGraphRepo, domain_id
+from omni_memory import build_memory
+from omni_memory.domain.models import DomainLink, DomainNode
+from omni_memory.infra.embeddings.factory import HashEmbedder
+from omni_memory.infra.repo.domain_graph_repo import DomainGraphRepo, domain_id
 
 
 def _memory():

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 
-from app.logging import JsonFormatter
+from omni_memory.logging import JsonFormatter
 
 
 def test_json_formatter_includes_structured_extra_fields():

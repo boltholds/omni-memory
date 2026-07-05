@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import time
 
-from app.builder import build_memory
-from domain.models import Episode, EpisodeEvent, Fact, Provenance
-from infra.embeddings.factory import HashEmbedder
-from infra.repo.episodic_repo import EpisodicRepo
-from infra.repo.graph_repo import GraphRepo
-from infra.repo.vector_repo import VectorStoreRepo
+from omni_memory.builder import build_memory
+from omni_memory.domain.models import Episode, EpisodeEvent, Fact, Provenance
+from omni_memory.infra.embeddings.factory import HashEmbedder
+from omni_memory.infra.repo.episodic_repo import EpisodicRepo
+from omni_memory.infra.repo.graph_repo import GraphRepo
+from omni_memory.infra.repo.vector_repo import VectorStoreRepo
 
 
 def _memory_with_vector(vrepo: VectorStoreRepo):

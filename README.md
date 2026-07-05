@@ -70,8 +70,9 @@ poetry install --with langchain
 Connect OmniMemory to a LangChain-style agent in three lines:
 
 ```python
-from app.builder import build_memory
-from app.integrations.langchain import create_omni_memory_tools
+from omni_memory import build_memory
+from omni_memory.integrations.langchain import create_omni_memory_tools
+from omni_memory.integrations.langgraph import make_context_node
 
 tools = create_omni_memory_tools(build_memory())
 ```
@@ -91,8 +92,9 @@ omni_memory_consolidate
 Use OmniMemory as graph state nodes without adding LangGraph as a core dependency:
 
 ```python
-from app.builder import build_memory
-from app.integrations.langgraph import make_context_node
+from omni_memory import build_memory
+from omni_memory.integrations.langchain import create_omni_memory_tools
+from omni_memory.integrations.langgraph import make_context_node
 
 context_node = make_context_node(build_memory())
 ```

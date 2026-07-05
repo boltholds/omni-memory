@@ -1,4 +1,4 @@
-from app.tokenizer import SimpleTokenizer, build_tokenizer
+from omni_memory.tokenizer import SimpleTokenizer, build_tokenizer
 
 def test_simple_tokenizer_counts_words():
     tok = SimpleTokenizer()

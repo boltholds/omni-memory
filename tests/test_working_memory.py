@@ -1,4 +1,4 @@
-from domain.working_memory import WorkingMemory
+from omni_memory.domain.working_memory import WorkingMemory
 
 def test_append_and_truncate():
     wm = WorkingMemory(max_tokens=5)

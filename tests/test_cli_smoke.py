@@ -5,7 +5,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from app.cli import app
+from omni_memory.cli import app
 
 
 runner = CliRunner()

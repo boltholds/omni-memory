@@ -4,13 +4,13 @@ import json
 
 import pytest
 
-from app.builder import build_memory
-from app.integrations.mcp import MCP_TOOL_SCHEMAS, build_mcp_handlers
-from app.mcp_server import build_mcp_app
-from app.ops_cycle import OpsCycleDraft
-from domain.experience_evaluator import DomainExperienceEvaluator
-from domain.models import ExperienceRecord
-from infra.embeddings.factory import HashEmbedder
+from omni_memory import build_memory
+from omni_memory.integrations.mcp import MCP_TOOL_SCHEMAS, build_mcp_handlers
+from omni_memory.mcp_server import build_mcp_app
+from omni_memory.ops_cycle import OpsCycleDraft
+from omni_memory.domain.experience_evaluator import DomainExperienceEvaluator
+from omni_memory.domain.models import ExperienceRecord
+from omni_memory.infra.embeddings.factory import HashEmbedder
 
 
 def _memory():

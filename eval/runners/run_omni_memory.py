@@ -6,11 +6,11 @@ import re
 from pathlib import Path
 from typing import Any
 
-from app.embeddings import HashEmbedder
-from app.memory import OmniMemory
-from infra.repo.episodic_repo import EpisodicRepo
-from infra.repo.graph_repo import GraphRepo
-from infra.repo.vector_repo import VectorStoreRepo
+from omni_memory.embeddings import HashEmbedder
+from omni_memory.memory import OmniMemory
+from omni_memory.infra.repo.episodic_repo import EpisodicRepo
+from omni_memory.infra.repo.graph_repo import GraphRepo
+from omni_memory.infra.repo.vector_repo import VectorStoreRepo
 from eval.metrics.scoring import load_cases, score_answer, summarize, write_report
 
 DEFAULT_DATASETS = [

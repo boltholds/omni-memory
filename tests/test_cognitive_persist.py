@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from domain.models import FailurePatternRecord, Provenance, SkillRecord
-from infra.repo.cognitive_repo import (
+from omni_memory.domain.models import FailurePatternRecord, Provenance, SkillRecord
+from omni_memory.infra.repo.cognitive_repo import (
     FailurePatternRepo,
     PersistentFailurePatternRepo,
     PersistentSkillRepo,

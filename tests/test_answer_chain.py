@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from app.config import settings
-from app.services.simple_answer_pipeline import AnswerPipelineRequest, SimpleAnswerPipeline
-from domain.llm import ILLMProvider, LLMResult, Msg
-from domain.models import ContextPack, ContextSection, Fact, Provenance, RetrievalBundle
-from infra.consistency import SimpleConsistencyEngine
+from omni_memory.config import settings
+from omni_memory.services.simple_answer_pipeline import AnswerPipelineRequest, SimpleAnswerPipeline
+from omni_memory.domain.llm import ILLMProvider, LLMResult, Msg
+from omni_memory.domain.models import ContextPack, ContextSection, Fact, Provenance, RetrievalBundle
+from omni_memory.infra.consistency import SimpleConsistencyEngine
 
 
 class DummyOrchestrator:

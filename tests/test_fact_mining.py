@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from app.builder import build_memory
-from app.fact_mining import StaticFactExtractor
-from infra.embeddings.factory import HashEmbedder
+from omni_memory.builder import build_memory
+from omni_memory.fact_mining import StaticFactExtractor
+from omni_memory.infra.embeddings.factory import HashEmbedder
 
 
 TEXT = "OmniMemory uses FastMCP for the MCP server. OmniMemory requires explicit memory scope for durable facts."

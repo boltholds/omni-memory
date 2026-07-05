@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from app.builder import build_memory
-from app.export_import import import_memory
-from infra.embeddings.factory import HashEmbedder
+from omni_memory.builder import build_memory
+from omni_memory.export_import import import_memory
+from omni_memory.infra.embeddings.factory import HashEmbedder
 
 
 def _memory():

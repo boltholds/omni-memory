@@ -1,4 +1,4 @@
-from app.embeddings import HashEmbedder
+from omni_memory.embeddings import HashEmbedder
 import numpy as np
 
 def cos(a,b): return float(np.dot(a,b))

@@ -1,4 +1,4 @@
-from app.prompting import PromptRenderer
+from omni_memory.prompting import PromptRenderer
 import logging
 
 def test_jinja_render_fallback_and_basic():

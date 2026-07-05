@@ -6,9 +6,9 @@ import types
 
 import pytest
 
-from app.builder import build_memory
-from app.integrations import langchain as langchain_integration
-from infra.embeddings.factory import HashEmbedder
+from omni_memory import build_memory
+from omni_memory.integrations import langchain as langchain_integration
+from omni_memory.infra.embeddings.factory import HashEmbedder
 
 
 class FakeStructuredTool:

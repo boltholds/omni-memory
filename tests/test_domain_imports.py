@@ -1,5 +1,5 @@
 def test_imports():
-    from domain import models, ports
+    from omni_memory.domain import models, ports
 
     _ = models.MemoryObject
     _ = models.Fact

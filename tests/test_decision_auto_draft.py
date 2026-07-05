@@ -3,11 +3,11 @@ from __future__ import annotations
 import json
 import logging
 
-from app.builder import build_memory
-from app.decision_auto_draft import draft_decision_candidates
-from app.development_memory_workflow import FinishDevelopmentTaskRequest
-from app.integrations.mcp import build_mcp_handlers
-from infra.embeddings.factory import HashEmbedder
+from omni_memory.builder import build_memory
+from omni_memory.decision_auto_draft import draft_decision_candidates
+from omni_memory.development_memory_workflow import FinishDevelopmentTaskRequest
+from omni_memory.integrations.mcp import build_mcp_handlers
+from omni_memory.infra.embeddings.factory import HashEmbedder
 
 
 class FakeDecisionLLM:
