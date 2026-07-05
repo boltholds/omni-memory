@@ -8,6 +8,7 @@ import pytest
 
 from omni_memory import build_memory
 from omni_memory.integrations import langchain as langchain_integration
+from omni_memory.integrations.tool_registry import AGENT_TOOL_REGISTRY, get_tool_spec
 from omni_memory.infra.embeddings.factory import HashEmbedder
 
 
@@ -59,14 +60,20 @@ def test_langchain_tools_require_optional_dependency(monkeypatch):
 def test_create_omni_memory_tools_exposes_expected_structured_tools(fake_langchain_core):
     tools = langchain_integration.create_omni_memory_tools(_memory())
 
-    assert [tool.name for tool in tools] == [
-        "omni_memory_retrieve",
-        "omni_memory_context",
-        "omni_memory_write",
-        "omni_memory_finish_development_task",
-        "omni_memory_consolidate",
-    ]
+    assert [tool.name for tool in tools] == [spec.name for spec in AGENT_TOOL_REGISTRY]
+    assert [tool.description for tool in tools] == [spec.description for spec in AGENT_TOOL_REGISTRY]
+    assert [tool.args_schema for tool in tools] == [spec.args_schema for spec in AGENT_TOOL_REGISTRY]
     assert tools[0].args_schema is langchain_integration.RetrieveMemoryInput
+
+
+def test_single_langchain_tool_factories_use_shared_registry(fake_langchain_core):
+    memory = _memory()
+
+    assert langchain_integration.create_retrieve_memory_tool(memory).args_schema is get_tool_spec("omni_memory_retrieve").args_schema
+    assert langchain_integration.create_context_memory_tool(memory).args_schema is get_tool_spec("omni_memory_context").args_schema
+    assert langchain_integration.create_write_memory_tool(memory).args_schema is get_tool_spec("omni_memory_write").args_schema
+    assert langchain_integration.create_finish_development_task_tool(memory).args_schema is get_tool_spec("omni_memory_finish_development_task").args_schema
+    assert langchain_integration.create_consolidate_memory_tool(memory).args_schema is get_tool_spec("omni_memory_consolidate").args_schema
 
 
 def test_langchain_retrieve_and_context_tools_return_json_dicts(fake_langchain_core):
