@@ -6,6 +6,11 @@ from typing import Any
 from omni_memory.integrations.fact_mining_mcp import FACT_MINING_TOOL_SCHEMA
 
 
+MCP_PROFILE_AGENT_CORE = "agent_core"
+MCP_PROFILE_MAINTENANCE = "maintenance"
+MCP_PROFILES = (MCP_PROFILE_AGENT_CORE, MCP_PROFILE_MAINTENANCE)
+
+
 @dataclass(frozen=True)
 class McpToolDefinition:
     name: str
@@ -13,6 +18,7 @@ class McpToolDefinition:
     required: list[str] | None = None
     description: str | None = None
     schema_override: dict[str, Any] | None = None
+    profile: str = MCP_PROFILE_MAINTENANCE
 
     def to_schema(self) -> dict[str, Any]:
         if self.schema_override is not None:
@@ -32,6 +38,20 @@ _BOOLEAN = {"type": "boolean"}
 
 def mcp_tool_schemas() -> list[dict[str, Any]]:
     return [definition.to_schema() for definition in MCP_TOOL_REGISTRY]
+
+
+def mcp_tool_definitions_for_profile(profile: str) -> list[McpToolDefinition]:
+    if profile not in MCP_PROFILES:
+        raise ValueError(f"Unknown MCP tool profile: {profile}")
+    return [definition for definition in MCP_TOOL_REGISTRY if definition.profile == profile]
+
+
+def mcp_tool_names_for_profile(profile: str) -> list[str]:
+    return [definition.name for definition in mcp_tool_definitions_for_profile(profile)]
+
+
+def mcp_tool_profiles() -> dict[str, list[str]]:
+    return {profile: mcp_tool_names_for_profile(profile) for profile in MCP_PROFILES}
 
 
 def _object_schema(properties: dict[str, Any], required: list[str] | None = None) -> dict[str, Any]:
@@ -320,6 +340,7 @@ MCP_TOOL_REGISTRY: list[McpToolDefinition] = [
         {"query": _STRING, "k_sem": {"type": "integer", "default": 5}, "k_eps": {"type": "integer", "default": 3}, "intent": _STRING, "mode": _STRING, "scope": _scope_schema()},
         ["query"],
         "Retrieve facts, episodes and semantic chunks from OmniMemory.",
+        profile=MCP_PROFILE_AGENT_CORE,
     ),
     McpToolDefinition(
         "omni_memory_ask",
@@ -327,7 +348,7 @@ MCP_TOOL_REGISTRY: list[McpToolDefinition] = [
         ["question"],
         "Ask a question using OmniMemory context and the configured LLM.",
     ),
-    McpToolDefinition("omni_memory_context", {"query": {"type": "string", "default": ""}, "intent": _STRING, "mode": _STRING, "scope": _scope_schema()}, description="Build an explainable OmniMemory context pack for a query."),
+    McpToolDefinition("omni_memory_context", {"query": {"type": "string", "default": ""}, "intent": _STRING, "mode": _STRING, "scope": _scope_schema()}, description="Build an explainable OmniMemory context pack for a query.", profile=MCP_PROFILE_AGENT_CORE),
     McpToolDefinition("omni_memory_detect_conflicts", {"query": _STRING, "facts": {"type": "array", "items": {"type": "object"}}, "scope": _scope_schema()}, description="Detect conflicts either for provided facts or for facts retrieved by query."),
     McpToolDefinition("omni_memory_mine_facts", schema_override=FACT_MINING_TOOL_SCHEMA),
     McpToolDefinition("omni_memory_write_fact", _fact_props(), ["subject", "predicate", "object"], "Save a single structured fact."),
@@ -344,7 +365,7 @@ MCP_TOOL_REGISTRY: list[McpToolDefinition] = [
     McpToolDefinition("omni_memory_write_experience", _experience_props(), ["goal", "lesson"], "Save an agent experience record: goal, action, outcome, lesson and reuse conditions."),
     McpToolDefinition("omni_memory_list_experiences", {"limit": _INTEGER}, description="List agent experience records."),
     McpToolDefinition("omni_memory_get_experience", {"experience_id": _STRING}, ["experience_id"], "Get an agent experience record by id."),
-    McpToolDefinition("omni_memory_search_experiences", _search_props(), ["query"], "Search agent experience records by intent, lesson or reuse condition."),
+    McpToolDefinition("omni_memory_search_experiences", _search_props(), ["query"], "Search agent experience records by intent, lesson or reuse condition.", profile=MCP_PROFILE_AGENT_CORE),
     McpToolDefinition("omni_memory_write_skill", _skill_props(), ["name"], "Save a reusable skill record promoted from repeated experience."),
     McpToolDefinition("omni_memory_list_skills", {"limit": _INTEGER}, description="List reusable skill records."),
     McpToolDefinition("omni_memory_get_skill", {"skill_id": _STRING}, ["skill_id"], "Get a reusable skill record by id."),
@@ -352,12 +373,12 @@ MCP_TOOL_REGISTRY: list[McpToolDefinition] = [
     McpToolDefinition("omni_memory_write_failure_pattern", _failure_pattern_props(), ["symptom"], "Save a reusable failure pattern with symptom, cause, fix and detection hints."),
     McpToolDefinition("omni_memory_list_failure_patterns", {"limit": _INTEGER}, description="List reusable failure pattern records."),
     McpToolDefinition("omni_memory_get_failure_pattern", {"pattern_id": _STRING}, ["pattern_id"], "Get a reusable failure pattern record by id."),
-    McpToolDefinition("omni_memory_search_failure_patterns", _search_props(), ["query"], "Search reusable failure pattern records."),
+    McpToolDefinition("omni_memory_search_failure_patterns", _search_props(), ["query"], "Search reusable failure pattern records.", profile=MCP_PROFILE_AGENT_CORE),
     McpToolDefinition("omni_memory_consolidate_experiences", {"dry_run": {"type": "boolean", "default": True}, "min_confidence": {"type": "number", "default": 0.85}}, description="Consolidate repeated high-confidence experiences into skill and failure-pattern proposals. Dry-run by default."),
     McpToolDefinition("omni_memory_record_agent_cycle", _agent_cycle_props(), ["goal", "lesson"], "Record a completed agent cycle as reusable experience."),
     McpToolDefinition("omni_memory_draft_development_cycle", _development_cycle_props(), ["goal"], "Draft a development cycle as an agent-cycle record without writing memory."),
     McpToolDefinition("omni_memory_record_development_cycle", _development_cycle_props(), ["goal", "lesson"], "Record a development cycle as reusable experience."),
-    McpToolDefinition("omni_memory_finish_development_task", _finish_task_props(), ["goal", "lesson"], "Finish a development task: record reusable experience and return distillation review candidates."),
+    McpToolDefinition("omni_memory_finish_development_task", _finish_task_props(), ["goal", "lesson"], "Finish a development task: record reusable experience and return distillation review candidates.", profile=MCP_PROFILE_AGENT_CORE),
     McpToolDefinition("omni_memory_draft_ops_cycle", _ops_cycle_props(), ["goal", "service"], "Draft an operations/incident cycle without writing memory."),
     McpToolDefinition("omni_memory_record_ops_cycle", _ops_cycle_props(), ["goal", "service", "lesson"], "Record an operations/incident cycle as reusable experience."),
     McpToolDefinition("omni_memory_submit_review_item", _review_item_props(), ["kind", "title", "payload"], "Submit a cognitive memory proposal to the review queue."),

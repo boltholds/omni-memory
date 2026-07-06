@@ -7,7 +7,14 @@ import pytest
 
 from omni_memory import build_memory
 from omni_memory.integrations.mcp import MCP_TOOL_SCHEMAS, build_mcp_handlers
-from omni_memory.integrations.mcp_registry import MCP_TOOL_REGISTRY
+from omni_memory.integrations.mcp_registry import (
+    MCP_PROFILE_AGENT_CORE,
+    MCP_PROFILE_MAINTENANCE,
+    MCP_PROFILES,
+    MCP_TOOL_REGISTRY,
+    mcp_tool_names_for_profile,
+    mcp_tool_profiles,
+)
 from omni_memory.mcp_server import _build_tool_function, build_mcp_app
 from omni_memory.infra.embeddings.factory import HashEmbedder
 
@@ -128,6 +135,36 @@ def test_mcp_advertised_tools_are_callable():
 
     assert advertised == set(handlers)
     assert all(callable(handler) for handler in handlers.values())
+
+
+def test_mcp_tool_profiles_expose_small_agent_core_surface():
+    profiles = mcp_tool_profiles()
+
+    assert set(profiles) == set(MCP_PROFILES)
+    assert profiles[MCP_PROFILE_AGENT_CORE] == [
+        "omni_memory_retrieve",
+        "omni_memory_context",
+        "omni_memory_search_experiences",
+        "omni_memory_search_failure_patterns",
+        "omni_memory_finish_development_task",
+    ]
+    assert "omni_memory_clear" in profiles[MCP_PROFILE_MAINTENANCE]
+    assert "omni_memory_accept_review_item" in profiles[MCP_PROFILE_MAINTENANCE]
+    assert "omni_memory_list_facts" in profiles[MCP_PROFILE_MAINTENANCE]
+    assert "omni_memory_session_commit" in profiles[MCP_PROFILE_MAINTENANCE]
+    assert "omni_memory_consolidate_experiences" in profiles[MCP_PROFILE_MAINTENANCE]
+
+
+def test_every_mcp_tool_has_a_supported_profile():
+    names_by_profile = set()
+
+    for definition in MCP_TOOL_REGISTRY:
+        assert definition.profile in MCP_PROFILES
+        names_by_profile.add(definition.name)
+
+    assert names_by_profile == set(mcp_tool_names_for_profile(MCP_PROFILE_AGENT_CORE)) | set(
+        mcp_tool_names_for_profile(MCP_PROFILE_MAINTENANCE)
+    )
 
 
 def test_mcp_handlers_write_retrieve_context_and_conflicts():

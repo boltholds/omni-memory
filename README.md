@@ -79,6 +79,31 @@ After package installation outside Poetry, the config can be shortened to:
 }
 ```
 
+### Recommended MCP surface
+
+OmniMemory exposes many MCP tools, but a coding agent usually should start with the small `agent_core` profile:
+
+```text
+omni_memory_context
+omni_memory_retrieve
+omni_memory_finish_development_task
+omni_memory_search_experiences
+omni_memory_search_failure_patterns
+```
+
+Those are enough for the normal loop: read relevant memory, use prior lessons/failure patterns, and record the completed task.
+
+Keep maintenance/admin tools available for humans or trusted workflows:
+
+```text
+review queue tools
+facts CRUD tools
+consolidation tools
+clear/stats/session tools
+```
+
+The full tool list remains available for advanced clients, but exposing everything to a fully autonomous coding agent is usually unnecessary.
+
 ### 4. Give your coding agent a memory instruction
 
 Paste this into your coding agent/system instructions:
@@ -140,6 +165,22 @@ omni_memory_search_failure_patterns
 ```
 
 That is the “magic moment”: the next run is no longer starting from an empty context window.
+
+## Demo: failure pattern changes the next agent run
+
+The main product demo is deliberately simple:
+
+```text
+1. Agent without memory adds an MCP handler but forgets the schema registry.
+2. The advertised-tools contract test fails.
+3. OmniMemory records the failure pattern:
+   handler and schema registry must be updated together.
+4. A later agent receives a similar task and retrieves the failure pattern.
+5. The agent updates registry + handler + contract test.
+6. The test passes.
+```
+
+This is the behavior OmniMemory optimizes for: not just recalling facts, but helping the next development cycle avoid a previously learned mistake.
 
 ## What the agent should remember
 
