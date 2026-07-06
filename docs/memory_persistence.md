@@ -15,7 +15,7 @@ MEMORY_AUDIT_AUTO_CREATE=true
 Then start the server:
 
 ```bash
-poetry run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+poetry run uvicorn omni_memory.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 `/v1/memories/remember` will still return the normal writeback result. When persistence is enabled, it also adds:

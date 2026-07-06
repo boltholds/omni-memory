@@ -71,6 +71,11 @@ class AnswerOut(BaseModel):
     advisories: List[str] = []
     used_sections: List[str] = [] 
 
+
+def _llm_enabled() -> bool:
+    return settings.llm_provider.strip().lower() not in {"", "none", "off", "disabled"}
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="omni-memory", version="0.1.0")
 
@@ -102,7 +107,7 @@ def create_app() -> FastAPI:
 
 
 
-    memory = build_memory(use_llm=True, reject_conflicts=False)
+    memory = build_memory(use_llm=_llm_enabled(), reject_conflicts=False)
 
     vrepo = memory.vector_repo
     grepo = memory.graph_repo

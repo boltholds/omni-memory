@@ -126,7 +126,7 @@ class Settings(BaseSettings):
     tokenizer_backend: str = "auto"  # auto|tiktoken|simple
     tokenizer_model: str = "cl100k_base"
 
-    llm_provider: str = "openai"  # none|openai|ollama|openai-compatible
+    llm_provider: str = "none"  # none|openai|ollama|openai-compatible
     llm_model: str = "/home/vrai/models/Qwen2.5-7B-Instruct-AWQ"
     llm_ollama_model: str = "llama3.1"
     llm_temperature: float = 0.3

@@ -22,7 +22,7 @@ $env:MEMORY_AUDIT_AUTO_CREATE="true"
 $env:LLM_PROVIDER="none"
 $env:EMBEDDING_BACKEND="hash"
 $env:NER_BACKEND="regex"
-poetry run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+poetry run uvicorn omni_memory.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 Then run the demo from `docs/demo_end_to_end.md`.

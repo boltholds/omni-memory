@@ -272,6 +272,15 @@ For server/audit persistence, see:
 
 ```text
 docs/memory_persistence.md
+docs/local_persistence.md
+```
+
+For the focused MCP and coding-agent walkthroughs:
+
+```text
+docs/quickstart_mcp.md
+docs/coding_agent_memory.md
+docs/security.md
 ```
 
 ## Product CLI
@@ -289,6 +298,7 @@ serve    run FastAPI server
 mcp      run MCP stdio server
 doctor   check local runtime readiness
 memory   local memory read/write commands
+review   human review queue commands
 admin    import/export and vector maintenance
 debug    diagnostics and profiling
 ```
@@ -299,6 +309,9 @@ Examples:
 poetry run omni-memory memory write-note "OmniMemory stores governed memory."
 poetry run omni-memory memory retrieve "governed memory"
 poetry run omni-memory memory path
+poetry run omni-memory review list
+poetry run omni-memory review accept <item-id>
+poetry run omni-memory admin backup omni-memory-backup.zip
 poetry run omni-memory admin export memory.json
 poetry run omni-memory debug llm-check
 ```

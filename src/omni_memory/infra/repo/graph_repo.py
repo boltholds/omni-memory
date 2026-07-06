@@ -157,7 +157,9 @@ class GraphRepo(IGraphRepository):
         return result
 
     def _edges_by_ids(self, edge_ids: Iterable[str]) -> Iterable[tuple[str, str, str, dict[str, Any]]]:
-        for edge_id in edge_ids:
+        order = {edge_id: idx for idx, edge_id in enumerate(self._edge_by_id)}
+        ordered_ids = sorted(edge_ids, key=lambda edge_id: order.get(edge_id, len(order)))
+        for edge_id in ordered_ids:
             edge = self._edge_by_id.get(edge_id)
             if edge is None:
                 continue
