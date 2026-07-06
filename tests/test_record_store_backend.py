@@ -11,6 +11,7 @@ from omni_memory.domain.models import (
     ReviewItem,
     SkillRecord,
 )
+from omni_memory.domain.requests import RecordExperienceRequest, WriteDecisionRequest
 from omni_memory.infra.record_store import InMemoryRecordStoreBackend, JsonRecordStoreBackend, RecordStoreBackends
 from omni_memory.infra.repo.cognitive_repo import FailurePatternRepo, PersistentSkillRepo, SkillRepo
 from omni_memory.infra.repo.decision_repo import DecisionRepo, PersistentDecisionRepo
@@ -153,8 +154,8 @@ def test_public_memory_builder_accepts_record_store_backend_bundle():
         )
     )
 
-    memory.write_decision(title="Builder accepts record backend", decision="Expose record_store_backends on build_memory.", source="test")
-    memory.record_experience(goal="Use record backend", lesson="Builder should wire typed stores.", source="test")
+    memory.write_decision(WriteDecisionRequest(title="Builder accepts record backend", decision="Expose record_store_backends on build_memory.", source="test"))
+    memory.record_experience(RecordExperienceRequest(goal="Use record backend", lesson="Builder should wire typed stores.", source="test"))
 
     assert decision_backend.saved_ids
     assert experience_backend.saved_ids

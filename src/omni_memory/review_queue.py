@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from omni_memory.domain.models import Provenance, ReviewItem
+from omni_memory.domain.requests import WriteDecisionRequest, WriteFailurePatternRequest, WriteSkillRequest
 from omni_memory.domain.writeback import stable_id
 
 ReviewAction = Literal["accept", "reject", "supersede"]
@@ -130,40 +131,46 @@ class ReviewQueueService:
         if item.kind == "decision":
             status = payload.get("status") or "accepted"
             return self.memory.write_decision(
-                title=payload.get("title") or item.title,
-                decision=payload.get("decision", ""),
-                context=payload.get("context", ""),
-                consequences=payload.get("consequences") or [],
-                alternatives=payload.get("alternatives") or [],
-                refs=payload.get("refs") or {},
-                status=status if status != "proposed" else "accepted",
-                source="review-queue",
-                meta={**dict(payload.get("meta") or {}), "accepted_from_review_id": item.id},
+                WriteDecisionRequest(
+                    title=payload.get("title") or item.title,
+                    decision=payload.get("decision", ""),
+                    context=payload.get("context", ""),
+                    consequences=payload.get("consequences") or [],
+                    alternatives=payload.get("alternatives") or [],
+                    refs=payload.get("refs") or {},
+                    status=status if status != "proposed" else "accepted",
+                    source="review-queue",
+                    meta={**dict(payload.get("meta") or {}), "accepted_from_review_id": item.id},
+                )
             ).model_dump()
         if item.kind == "skill":
             return self.memory.write_skill(
-                name=payload.get("name") or item.title,
-                problem=payload.get("problem", ""),
-                procedure=payload.get("procedure") or [],
-                reuse_when=payload.get("reuse_when") or [],
-                avoid_when=payload.get("avoid_when") or [],
-                evidence_ids=payload.get("evidence_ids") or [],
-                confidence=float(payload.get("confidence", item.confidence)),
-                refs=payload.get("refs") or {},
-                source="review-queue",
-                meta={**dict(payload.get("meta") or {}), "accepted_from_review_id": item.id},
+                WriteSkillRequest(
+                    name=payload.get("name") or item.title,
+                    problem=payload.get("problem", ""),
+                    procedure=payload.get("procedure") or [],
+                    reuse_when=payload.get("reuse_when") or [],
+                    avoid_when=payload.get("avoid_when") or [],
+                    evidence_ids=payload.get("evidence_ids") or [],
+                    confidence=float(payload.get("confidence", item.confidence)),
+                    refs=payload.get("refs") or {},
+                    source="review-queue",
+                    meta={**dict(payload.get("meta") or {}), "accepted_from_review_id": item.id},
+                )
             ).model_dump()
         if item.kind == "failure_pattern":
             return self.memory.write_failure_pattern(
-                symptom=payload.get("symptom") or item.title,
-                root_cause=payload.get("root_cause", ""),
-                fix=payload.get("fix", ""),
-                detection=payload.get("detection", ""),
-                evidence_ids=payload.get("evidence_ids") or [],
-                confidence=float(payload.get("confidence", item.confidence)),
-                refs=payload.get("refs") or {},
-                source="review-queue",
-                meta={**dict(payload.get("meta") or {}), "accepted_from_review_id": item.id},
+                WriteFailurePatternRequest(
+                    symptom=payload.get("symptom") or item.title,
+                    root_cause=payload.get("root_cause", ""),
+                    fix=payload.get("fix", ""),
+                    detection=payload.get("detection", ""),
+                    evidence_ids=payload.get("evidence_ids") or [],
+                    confidence=float(payload.get("confidence", item.confidence)),
+                    refs=payload.get("refs") or {},
+                    source="review-queue",
+                    meta={**dict(payload.get("meta") or {}), "accepted_from_review_id": item.id},
+                )
             ).model_dump()
         if item.kind == "writeback_item":
             return self.memory.write_items(

@@ -6,6 +6,7 @@ from omni_memory.integrations.fact_mining_mcp import build_fact_mining_handler
 from omni_memory.integrations.mcp_registry import mcp_tool_schemas
 from omni_memory.memory import OmniMemory
 from omni_memory.domain.models import Fact, FailurePatternRecord, SkillRecord
+from omni_memory.domain.requests import RecordExperienceRequest, WriteDecisionRequest, WriteFailurePatternRequest, WriteSkillRequest
 
 MCP_TOOL_SCHEMAS = mcp_tool_schemas()
 
@@ -31,10 +32,10 @@ def build_mcp_handlers(memory: OmniMemory) -> dict[str, Callable[..., Any]]:
         "omni_memory_supersede_fact": lambda **kw: memory.maintain_facts({"operation": "supersede", "fact_id": kw["fact_id"], "new_fact": kw.get("new_fact") or {}, "reason": kw.get("reason"), "source": kw.get("source", "mcp"), "dry_run": kw.get("dry_run", False)}).model_dump(mode="json"),
         "omni_memory_delete_fact": lambda **kw: memory.maintain_facts({"operation": "hard_delete" if kw.get("hard", False) else "retract", "fact_id": kw["fact_id"], "reason": kw.get("reason"), "dry_run": kw.get("dry_run", False)}).model_dump(mode="json"),
         "omni_memory_write_note": lambda **kw: memory.write_note(kw["text"], source=kw.get("source", "mcp"), meta=kw.get("meta") or {}).model_dump(),
-        "omni_memory_write_decision": lambda **kw: memory.write_decision(title=kw["title"], decision=kw["decision"], context=kw.get("context", ""), consequences=kw.get("consequences") or [], alternatives=kw.get("alternatives") or [], refs=kw.get("refs") or {}, status=kw.get("status", "accepted"), source=kw.get("source", "mcp"), meta=kw.get("meta") or {}).model_dump(),
+        "omni_memory_write_decision": lambda **kw: _write_decision(memory, **kw),
         "omni_memory_list_decisions": lambda **kw: {"decisions": [item.model_dump(mode="json") for item in memory.list_decisions(status=kw.get("status"), limit=kw.get("limit"))]},
         "omni_memory_get_decision": lambda **kw: {"decision": (item.model_dump(mode="json") if (item := memory.get_decision(kw["decision_id"])) is not None else None)},
-        "omni_memory_write_experience": lambda **kw: memory.record_experience(goal=kw["goal"], lesson=kw["lesson"], context=kw.get("context", ""), decision=kw.get("decision", ""), actions=kw.get("actions") or [], outcome=kw.get("outcome", ""), evaluation=kw.get("evaluation") or {}, reuse_when=kw.get("reuse_when") or [], avoid_when=kw.get("avoid_when") or [], confidence=kw.get("confidence", 0.5), refs=kw.get("refs") or {}, source=kw.get("source", "mcp"), meta=kw.get("meta") or {}).model_dump(),
+        "omni_memory_write_experience": lambda **kw: _write_experience(memory, **kw),
         "omni_memory_list_experiences": lambda **kw: {"experiences": [item.model_dump(mode="json") for item in memory.list_experiences(limit=kw.get("limit"))]},
         "omni_memory_get_experience": lambda **kw: {"experience": (item.model_dump(mode="json") if (item := memory.get_experience(kw["experience_id"])) is not None else None)},
         "omni_memory_search_experiences": lambda **kw: {"experiences": [item.model_dump(mode="json") for item in memory.search_experiences(kw["query"], k=kw.get("k", 5))]},
@@ -64,17 +65,74 @@ def build_mcp_handlers(memory: OmniMemory) -> dict[str, Callable[..., Any]]:
         "omni_memory_session_clear": lambda **kw: _session_clear(memory),
         "omni_memory_clear": lambda **kw: memory.clear(include_vectors=kw.get("include_vectors", True), include_facts=kw.get("include_facts", True), include_episodes=kw.get("include_episodes", True), include_decisions=kw.get("include_decisions", True), include_experiences=kw.get("include_experiences", True), include_skills=kw.get("include_skills", True), include_failure_patterns=kw.get("include_failure_patterns", True), include_review_items=kw.get("include_review_items", True), include_session=kw.get("include_session", True), dry_run=kw.get("dry_run", False)).__dict__,
         "omni_memory_stats": lambda **kw: _stats(memory),
-    }
+}
+
+
+def _write_decision(memory: OmniMemory, **kw: Any) -> dict[str, Any]:
+    request = WriteDecisionRequest(
+        title=kw["title"],
+        decision=kw["decision"],
+        context=kw.get("context", ""),
+        consequences=kw.get("consequences") or [],
+        alternatives=kw.get("alternatives") or [],
+        refs=kw.get("refs") or {},
+        status=kw.get("status", "accepted"),
+        source=kw.get("source", "mcp"),
+        meta=kw.get("meta") or {},
+    )
+    return memory.write_decision(request).model_dump()
+
+
+def _write_experience(memory: OmniMemory, **kw: Any) -> dict[str, Any]:
+    request = RecordExperienceRequest(
+        goal=kw["goal"],
+        lesson=kw["lesson"],
+        context=kw.get("context", ""),
+        decision=kw.get("decision", ""),
+        actions=kw.get("actions") or [],
+        outcome=kw.get("outcome", ""),
+        evaluation=kw.get("evaluation") or {},
+        reuse_when=kw.get("reuse_when") or [],
+        avoid_when=kw.get("avoid_when") or [],
+        confidence=kw.get("confidence", 0.5),
+        refs=kw.get("refs") or {},
+        source=kw.get("source", "mcp"),
+        meta=kw.get("meta") or {},
+    )
+    return memory.record_experience(request).model_dump()
 
 
 def _write_skill(memory: OmniMemory, **kw: Any) -> dict[str, Any]:
-    result = memory.write_skill_raw(name=kw["name"], problem=kw.get("problem", ""), procedure=kw.get("procedure") or [], reuse_when=kw.get("reuse_when") or [], avoid_when=kw.get("avoid_when") or [], evidence_ids=kw.get("evidence_ids") or [], confidence=kw.get("confidence", 0.5), refs=kw.get("refs") or {}, source=kw.get("source", "mcp"), meta=kw.get("meta") or {})
+    request = WriteSkillRequest(
+        name=kw["name"],
+        problem=kw.get("problem", ""),
+        procedure=kw.get("procedure") or [],
+        reuse_when=kw.get("reuse_when") or [],
+        avoid_when=kw.get("avoid_when") or [],
+        evidence_ids=kw.get("evidence_ids") or [],
+        confidence=kw.get("confidence", 0.5),
+        refs=kw.get("refs") or {},
+        source=kw.get("source", "mcp"),
+        meta=kw.get("meta") or {},
+    )
+    result = memory.write_skill_raw(request)
     item = next((saved for saved in result.saved if isinstance(saved, SkillRecord)), None)
     return {"saved": result.saved_count, "rejected": result.rejected_count + result.error_count, "reasons": result.reasons, "skill": item.model_dump(mode="json") if item else None}
 
 
 def _write_failure_pattern(memory: OmniMemory, **kw: Any) -> dict[str, Any]:
-    result = memory.write_failure_pattern_raw(symptom=kw["symptom"], root_cause=kw.get("root_cause", ""), fix=kw.get("fix", ""), detection=kw.get("detection", ""), evidence_ids=kw.get("evidence_ids") or [], confidence=kw.get("confidence", 0.5), refs=kw.get("refs") or {}, source=kw.get("source", "mcp"), meta=kw.get("meta") or {})
+    request = WriteFailurePatternRequest(
+        symptom=kw["symptom"],
+        root_cause=kw.get("root_cause", ""),
+        fix=kw.get("fix", ""),
+        detection=kw.get("detection", ""),
+        evidence_ids=kw.get("evidence_ids") or [],
+        confidence=kw.get("confidence", 0.5),
+        refs=kw.get("refs") or {},
+        source=kw.get("source", "mcp"),
+        meta=kw.get("meta") or {},
+    )
+    result = memory.write_failure_pattern_raw(request)
     item = next((saved for saved in result.saved if isinstance(saved, FailurePatternRecord)), None)
     return {"saved": result.saved_count, "rejected": result.rejected_count + result.error_count, "reasons": result.reasons, "failure_pattern": item.model_dump(mode="json") if item else None}
 

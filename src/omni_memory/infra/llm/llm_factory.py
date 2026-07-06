@@ -51,6 +51,7 @@ def build_llm(config: LLMConfig | None = None) -> ILLMProvider | None:
         return OllamaLLM(
             model=cfg.model or settings.llm_ollama_model,
             base_url=cfg.base_url or settings.ollama_base_url,
+            timeout=cfg.timeout,
         )
 
     raise ValueError(f"Unsupported LLM provider: {cfg.provider}")

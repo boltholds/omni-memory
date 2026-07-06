@@ -10,6 +10,7 @@ import pytest
 
 from omni_memory import build_memory
 from omni_memory.domain.llm import ILLMProvider, Msg
+from omni_memory.domain.requests import RecordExperienceRequest, WriteDecisionRequest, WriteFailurePatternRequest, WriteSkillRequest
 from omni_memory.infra.embeddings.factory import HashEmbedder
 from omni_memory.infra.llm.llm_ollama import OllamaLLM
 
@@ -296,13 +297,13 @@ def _run_agent(case: LongHorizonCase, *, llm: ILLMProvider, with_memory: bool) -
 
 def _seed_memory(memory: Any, case: LongHorizonCase) -> None:
     if case.prior_kind == "skill":
-        memory.write_skill(source="benchmark-seed", meta=_seed_meta(), **case.prior)
+        memory.write_skill(WriteSkillRequest(source="benchmark-seed", meta=_seed_meta(), **case.prior))
     elif case.prior_kind == "failure_pattern":
-        memory.write_failure_pattern(source="benchmark-seed", meta=_seed_meta(), **case.prior)
+        memory.write_failure_pattern(WriteFailurePatternRequest(source="benchmark-seed", meta=_seed_meta(), **case.prior))
     elif case.prior_kind == "decision":
-        memory.write_decision(source="benchmark-seed", meta=_seed_meta(), **case.prior)
+        memory.write_decision(WriteDecisionRequest(source="benchmark-seed", meta=_seed_meta(), **case.prior))
     elif case.prior_kind == "experience":
-        memory.record_experience(source="benchmark-seed", meta=_seed_meta(), **case.prior)
+        memory.record_experience(RecordExperienceRequest(source="benchmark-seed", meta=_seed_meta(), **case.prior))
 
 
 def _seed_meta() -> dict[str, Any]:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from omni_memory import build_memory
 from omni_memory.domain.models import RetrievalBundle
+from omni_memory.domain.requests import WriteFailurePatternRequest
 from omni_memory.infra.embeddings.factory import HashEmbedder
 
 
@@ -38,13 +39,15 @@ def test_coding_agent_demo_reuses_failure_pattern_to_avoid_repeating_a_mcp_bug()
     assert _fake_mcp_contract_check(baseline_plan) is False
 
     memory.write_failure_pattern(
-        symptom="A new MCP tool handler was added, but the tool was missing from advertised discovery.",
-        root_cause="The runtime handler and declarative MCP schema registry were changed separately.",
-        fix="Update the shared MCP schema registry and the runtime handler together, then assert advertised MCP tools match handlers.",
-        detection="MCP client cannot discover the new tool, or the advertised-tools contract test fails.",
-        confidence=0.95,
-        source="demo",
-        meta={"domain_ids": ["domain:project:omni-memory"], "demo": "coding-agent-memory-loop"},
+        WriteFailurePatternRequest(
+            symptom="A new MCP tool handler was added, but the tool was missing from advertised discovery.",
+            root_cause="The runtime handler and declarative MCP schema registry were changed separately.",
+            fix="Update the shared MCP schema registry and the runtime handler together, then assert advertised MCP tools match handlers.",
+            detection="MCP client cannot discover the new tool, or the advertised-tools contract test fails.",
+            confidence=0.95,
+            source="demo",
+            meta={"domain_ids": ["domain:project:omni-memory"], "demo": "coding-agent-memory-loop"},
+        )
     )
 
     recalled = memory.retrieve(TASK, intent="debug_failure", k_sem=0, k_eps=5)

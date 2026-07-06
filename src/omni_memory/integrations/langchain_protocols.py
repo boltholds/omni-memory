@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Protocol
 
 from omni_memory.domain.models import ContextPack, RetrievalBundle, WriteReport
+from omni_memory.domain.requests import RecordExperienceRequest
 
 
 class MemoryAnswerLike(Protocol):
@@ -84,20 +85,7 @@ class LangChainMemoryWriter(Protocol):
 
     def record_experience(
         self,
-        *,
-        goal: str,
-        lesson: str,
-        context: str = "",
-        decision: str = "",
-        actions: list[str] | None = None,
-        outcome: str = "",
-        evaluation: dict[str, Any] | None = None,
-        reuse_when: list[str] | None = None,
-        avoid_when: list[str] | None = None,
-        confidence: float = 0.5,
-        refs: dict[str, Any] | None = None,
-        source: str = "langchain",
-        meta: dict[str, Any] | None = None,
+        request: RecordExperienceRequest,
     ) -> WriteReport:
         ...
 

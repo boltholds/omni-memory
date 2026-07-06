@@ -2,12 +2,21 @@ from __future__ import annotations
 
 from omni_memory import build_memory
 from omni_memory.domain.models import DomainLink, DomainNode
+from omni_memory.domain.requests import RecordExperienceRequest, WriteSkillRequest
 from omni_memory.infra.embeddings.factory import HashEmbedder
 from omni_memory.infra.repo.domain_graph_repo import DomainGraphRepo, domain_id
 
 
 def _memory():
     return build_memory(use_llm=False, embedder=HashEmbedder())
+
+
+def _write_skill(memory, **kwargs):
+    return memory.write_skill(WriteSkillRequest(**kwargs))
+
+
+def _record_experience(memory, **kwargs):
+    return memory.record_experience(RecordExperienceRequest(**kwargs))
 
 
 def test_writeback_adds_scope_from_context_domains():
@@ -126,7 +135,8 @@ def test_domain_aware_retrieval_prefers_matching_project_scope():
     omni = memory.domain_graph_repo.upsert_node(DomainNode(id=domain_id("project", "omni-memory"), kind="project", name="OmniMemory"))
     persona = memory.domain_graph_repo.upsert_node(DomainNode(id=domain_id("project", "persona-ai"), kind="project", name="Persona AI"))
 
-    memory.write_skill(
+    _write_skill(
+        memory,
         name="Fix dependency issue",
         problem="Persona dependency issue in integration tests",
         procedure=["Inspect Persona dependencies"],
@@ -135,7 +145,8 @@ def test_domain_aware_retrieval_prefers_matching_project_scope():
         meta={"domain_ids": [persona.id]},
         source="codex-dev",
     )
-    memory.write_skill(
+    _write_skill(
+        memory,
         name="Fix dependency issue",
         problem="OmniMemory dependency issue in CI collection",
         procedure=["Inspect OmniMemory imports"],
@@ -154,7 +165,8 @@ def test_domain_aware_retrieval_prefers_matching_project_scope():
 def test_domain_aware_retrieval_downranks_test_ephemeral_memory():
     memory = _memory()
 
-    memory.write_skill(
+    _write_skill(
+        memory,
         name="Fix dependency issue",
         problem="Test fixture dependency issue",
         procedure=["Use test-only workaround"],
@@ -162,7 +174,8 @@ def test_domain_aware_retrieval_downranks_test_ephemeral_memory():
         confidence=0.9,
         source="test",
     )
-    memory.write_skill(
+    _write_skill(
+        memory,
         name="Fix dependency issue",
         problem="Durable project dependency issue",
         procedure=["Use durable project fix"],
@@ -184,7 +197,8 @@ def test_scope_retrieval_strict_domain_filter_keeps_only_requested_domain():
     omni = memory.domain_graph_repo.upsert_node(DomainNode(id=domain_id("project", "omni-memory"), kind="project", name="OmniMemory"))
     persona = memory.domain_graph_repo.upsert_node(DomainNode(id=domain_id("project", "persona-ai"), kind="project", name="Persona AI"))
 
-    memory.write_skill(
+    _write_skill(
+        memory,
         name="Fix dependency issue",
         problem="Persona dependency issue",
         procedure=["Inspect Persona dependencies"],
@@ -193,7 +207,8 @@ def test_scope_retrieval_strict_domain_filter_keeps_only_requested_domain():
         meta={"domain_ids": [persona.id]},
         source="codex-dev",
     )
-    memory.write_skill(
+    _write_skill(
+        memory,
         name="Fix dependency issue",
         problem="OmniMemory dependency issue",
         procedure=["Inspect OmniMemory dependencies"],
@@ -216,7 +231,8 @@ def test_scope_retrieval_strict_domain_filter_keeps_only_requested_domain():
 def test_scope_retrieval_environment_and_ephemeral_filters():
     memory = _memory()
 
-    memory.write_skill(
+    _write_skill(
+        memory,
         name="Fix dependency issue",
         problem="Test dependency issue",
         procedure=["Use test-only workaround"],
@@ -224,7 +240,8 @@ def test_scope_retrieval_environment_and_ephemeral_filters():
         confidence=0.9,
         source="test",
     )
-    memory.write_skill(
+    _write_skill(
+        memory,
         name="Fix dependency issue",
         problem="Durable dependency issue",
         procedure=["Use durable fix"],
@@ -255,7 +272,8 @@ def test_scope_retrieval_environment_and_ephemeral_filters():
 def test_scope_retrieval_memory_type_filter_disables_unrequested_channels():
     memory = _memory()
 
-    memory.write_skill(
+    _write_skill(
+        memory,
         name="Fix dependency issue",
         problem="Dependency issue",
         procedure=["Use durable fix"],
@@ -283,7 +301,8 @@ def test_consolidation_excludes_test_and_ephemeral_experiences():
     memory = _memory()
 
     for idx in range(2):
-        memory.record_experience(
+        _record_experience(
+            memory,
             goal="Consolidate durable domain experience",
             context="Durable project experience",
             decision="Promote durable project lesson",
@@ -296,7 +315,8 @@ def test_consolidation_excludes_test_and_ephemeral_experiences():
             meta={"domain_ids": ["domain:project:omni-memory"]},
             source="codex-dev",
         )
-        memory.record_experience(
+        _record_experience(
+            memory,
             goal="Consolidate test fixture experience",
             context="Ephemeral test fixture experience",
             decision="Do not promote test fixture lesson",

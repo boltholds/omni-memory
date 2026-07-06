@@ -13,9 +13,10 @@ log = logging.getLogger("app.llm")
 
 
 class OllamaLLM(ILLMProvider):
-    def __init__(self, model: str | None = None, base_url: str | None = None):
+    def __init__(self, model: str | None = None, base_url: str | None = None, timeout: float = 30.0):
         self.model = model or settings.llm_ollama_model
         self.base = _native_ollama_base_url(base_url or settings.ollama_base_url)
+        self.timeout = float(timeout)
 
     def generate(self, messages: List[Msg], temperature: float | None = None) -> LLMResult:
         url = f"{self.base}/api/chat"
@@ -30,7 +31,7 @@ class OllamaLLM(ILLMProvider):
         t0 = time.perf_counter()
 
         try:
-            with httpx.Client(timeout=httpx.Timeout(30.0, connect=2.0)) as client:
+            with httpx.Client(timeout=httpx.Timeout(self.timeout, connect=2.0)) as client:
                 r = client.post(url, json=payload)
                 dur = int((time.perf_counter() - t0) * 1000)
                 r.raise_for_status()

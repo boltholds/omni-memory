@@ -3,6 +3,7 @@ from __future__ import annotations
 from omni_memory.builder import build_memory
 from omni_memory.domain.experience_evaluator import DomainExperienceEvaluator, EvaluationResult
 from omni_memory.domain.models import ExperienceRecord
+from omni_memory.domain.requests import RecordExperienceRequest
 from omni_memory.infra.embeddings.factory import HashEmbedder
 
 
@@ -72,16 +73,18 @@ def test_consolidation_uses_injected_evaluator_from_memory_builder():
 
     for suffix in ["one", "two"]:
         memory.record_experience(
-            goal="Restore API latency SLA",
-            context="p95 latency increased after cache deployment",
-            actions=["Inspect traces", "Rollback cache config"],
-            outcome=f"Incident resolved {suffix}",
-            evaluation={"validation": {"sla_restored": True, "latency_p95_after_ms": 280}},
-            lesson="Rollback cache configuration when p95 latency spikes after deploy.",
-            reuse_when=["p95 latency spike after deploy"],
-            confidence=0.91,
-            source="codex-dev",
-            meta={"domain": "ops", "domain_ids": ["domain:ops:api"]},
+            RecordExperienceRequest(
+                goal="Restore API latency SLA",
+                context="p95 latency increased after cache deployment",
+                actions=["Inspect traces", "Rollback cache config"],
+                outcome=f"Incident resolved {suffix}",
+                evaluation={"validation": {"sla_restored": True, "latency_p95_after_ms": 280}},
+                lesson="Rollback cache configuration when p95 latency spikes after deploy.",
+                reuse_when=["p95 latency spike after deploy"],
+                confidence=0.91,
+                source="codex-dev",
+                meta={"domain": "ops", "domain_ids": ["domain:ops:api"]},
+            )
         )
 
     result = memory.consolidate_experiences(dry_run=True, min_confidence=0.85)

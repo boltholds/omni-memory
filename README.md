@@ -558,9 +558,13 @@ This is the beginning of product-level memory governance: every saved memory can
 
 ```text
 docs/architecture.md          architecture and stable/experimental boundaries
+docs/coding_agent_memory.md   coding-agent memory loop and review workflow
 docs/demo_end_to_end.md       full product demo scenario
+docs/local_persistence.md     local .omni-memory backup and restore story
 docs/memory_persistence.md    optional SQL audit persistence setup
+docs/quickstart_mcp.md        focused MCP setup for coding agents
 docs/release_checklist.md     pre-merge and release checklist
+docs/security.md              local-first security notes
 docs/stability.md             module stability policy
 ```
 
@@ -579,3 +583,17 @@ poetry run python benchmarks/memory_eval/report.py
 ```
 
 The benchmark reports answer score, context score, write failures, privacy violations, and answer failures where context was already correct.
+
+Run the local coding-agent memory utility benchmark:
+
+```bash
+poetry run python benchmarks/dev_agent/run.py --provider ollama --model qwen2.5:7b-instruct
+```
+
+For a fast deterministic smoke run:
+
+```bash
+poetry run python benchmarks/dev_agent/run.py --provider fake
+```
+
+This benchmark compares `no_memory`, `rag_only` and `omni_memory` modes on 20+ repeated-failure dev tasks. Some cases include tiny patch-level fixtures, and `--repo-eval` runs pytest inside temporary sandbox mini-repositories. The key metric is `repeat_failure_reduction_vs_no_memory`: whether OmniMemory helped the agent avoid an old project-specific mistake.
