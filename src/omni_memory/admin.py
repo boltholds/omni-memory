@@ -48,15 +48,9 @@ def attach_repos(vrepo, grepo, erepo, writeback: WritebackFacade | None = None):
 @router.post("/reset")
 def reset():
     st = router.state  # type: ignore[attr-defined]
-    # просто пересоздадим in-memory структуры
-    st["vrepo"]._index = type(st["vrepo"]._index)(st["vrepo"]._dim)  # IndexFlatIP
-    st["vrepo"]._ids.clear()
-    st["vrepo"]._store.clear()
-
-    st["grepo"]._g.clear()
-    # episodic проще пересоздать схему
-    st["erepo"]._conn.close()
-    st["erepo"].__init__(db_path=":memory:")
+    _clear_repo(st["vrepo"])
+    _clear_repo(st["grepo"])
+    _clear_repo(st["erepo"])
 
     return {"status": "reset"}
 
@@ -142,12 +136,17 @@ def gc(inp: GCRequest):
     # dry-run: просто посчитаем
     if inp.dry_run:
         # «подсчёт» на глаз из внутренностей (минимально — прогоним логику без удаления)
-        v_dead = sum(1 for obj in st["vrepo"]._store.values() if (obj.meta or {}).get("expire_at", now + 1) < now)  # type: ignore[attr-defined]
-        g_dead = 0
-        for s, o, k, data in st["grepo"]._g.edges(keys=True, data=True):  # type: ignore[attr-defined]
-            exp = (data.get("meta") or {}).get("expire_at")
-            if exp is not None and float(exp) < now:
-                g_dead += 1
+        v_dead = sum(
+            1
+            for obj in _repo_values(st["vrepo"])
+            if (getattr(obj, "meta", {}) or {}).get("expire_at", now + 1) < now
+        )
+        g_dead = sum(
+            1
+            for fact in st["grepo"].query()
+            if (fact.meta or {}).get("expire_at") is not None
+            and float((fact.meta or {}).get("expire_at")) < now
+        )
         e_dead = 0
         for r in st["erepo"]._conn.execute("SELECT meta FROM episodes"):  # type: ignore[attr-defined]
             meta = _jload(r[0]) or {}
@@ -161,3 +160,20 @@ def gc(inp: GCRequest):
     g = st["grepo"].gc_expired(now)
     e = st["erepo"].gc_expired(now)
     return {"removed": {"vector": v, "graph": g, "episodes": e}}
+
+
+def _clear_repo(repo: Any) -> int:
+    if hasattr(repo, "clear"):
+        return int(repo.clear())
+    if hasattr(repo, "_conn"):
+        repo._conn.close()
+        repo.__init__(db_path=":memory:")
+        return 0
+    raise TypeError(f"Repository does not support reset: {type(repo).__name__}")
+
+
+def _repo_values(repo: Any) -> list[Any]:
+    store = getattr(repo, "_store", None)
+    if store is None and hasattr(repo, "inner"):
+        store = getattr(repo.inner, "_store", None)
+    return list((store or {}).values())

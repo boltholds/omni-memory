@@ -232,7 +232,7 @@ class Retriever(IRetriever):
         domain_weights = _domain_weights(query, self._domain_graph, scope_filter)
 
         semantic_chunks: list[MemoryObject] = []
-        if profile.semantic and _memory_type_allowed("note", scope_filter):
+        if k_sem > 0 and profile.semantic and _memory_type_allowed("note", scope_filter):
             stop_vec = stats.timeit("retriever.vec_ms")
             semantic_chunks = self._rank_memory_items(
                 query,
@@ -261,7 +261,7 @@ class Retriever(IRetriever):
             stop_kg()
 
         episodes: List[Episode] = []
-        if profile.episodes and _memory_type_allowed("episode", scope_filter):
+        if k_eps > 0 and profile.episodes and _memory_type_allowed("episode", scope_filter):
             stop_ep = stats.timeit("retriever.ep_ms")
             episodes = self._rank_memory_items(
                 query,
@@ -276,7 +276,7 @@ class Retriever(IRetriever):
             stop_ep()
 
         decisions: List[DecisionRecord] = []
-        if profile.decisions and self._decisions is not None and _memory_type_allowed("decision", scope_filter):
+        if k_eps > 0 and profile.decisions and self._decisions is not None and _memory_type_allowed("decision", scope_filter):
             decisions = self._rank_memory_items(
                 query,
                 self._decisions.search(query, k=max(k_eps * 3, k_eps)),
@@ -289,7 +289,7 @@ class Retriever(IRetriever):
             )
 
         experiences: List[ExperienceRecord] = []
-        if profile.experiences and self._experiences is not None and _memory_type_allowed("experience", scope_filter):
+        if k_eps > 0 and profile.experiences and self._experiences is not None and _memory_type_allowed("experience", scope_filter):
             experiences = self._rank_memory_items(
                 query,
                 self._experiences.search(query, k=max(k_eps * 3, k_eps)),
@@ -302,7 +302,7 @@ class Retriever(IRetriever):
             )
 
         skills: List[SkillRecord] = []
-        if profile.skills and self._skills is not None and _memory_type_allowed("skill", scope_filter):
+        if k_eps > 0 and profile.skills and self._skills is not None and _memory_type_allowed("skill", scope_filter):
             skills = self._rank_memory_items(
                 query,
                 self._skills.search(query, k=max(k_eps * 3, k_eps)),
@@ -315,7 +315,7 @@ class Retriever(IRetriever):
             )
 
         patterns: List[PatternRecord] = []
-        if profile.failure_patterns and self._patterns is not None and _memory_type_allowed("failure_pattern", scope_filter):
+        if k_eps > 0 and profile.failure_patterns and self._patterns is not None and _memory_type_allowed("failure_pattern", scope_filter):
             patterns = self._rank_memory_items(
                 query,
                 self._patterns.search(query, k=max(k_eps * 3, k_eps)),

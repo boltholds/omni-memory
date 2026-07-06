@@ -62,11 +62,17 @@ def import_memory(writeback: MemoryWriteFacade, archive: Dict[str, Any]):
 
 def vr_repo_iter_objects(vrepo) -> List[MemoryObject]:
     # VectorStoreRepo хранит оригинальные MemoryObject в _store
-    return list(vrepo._store.values())  # type: ignore[attr-defined]
+    store = getattr(vrepo, "_store", None)
+    if store is None and hasattr(vrepo, "inner"):
+        store = getattr(vrepo.inner, "_store", None)
+    return list((store or {}).values())
 
 
 def gr_repo_iter_facts(grepo) -> List[Fact]:
-    # GraphRepo хранит MultiDiGraph в _g с edges (s, o, key, data)
+    if hasattr(grepo, "query"):
+        return list(grepo.query())
+
+    # Legacy fallback: old GraphRepo stored a MultiDiGraph in _g.
     g = grepo._g  # type: ignore[attr-defined]
     out: List[Fact] = []
     for s, o, k, data in g.edges(keys=True, data=True):
